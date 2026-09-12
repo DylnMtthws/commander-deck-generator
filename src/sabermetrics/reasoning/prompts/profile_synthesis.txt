@@ -69,7 +69,9 @@ Synthesize these evidence streams into a strategic profile. Your reasoning must:
 
 5. **Estimate power level range** using the WotC bracket framework (1-5), not a single number.
 
-6. **Cite specific rules** when they affect your reasoning (e.g., "CR 702.2 confirms flash creatures count as cast for trigger purposes").
+6. **Cite specific rules** when they affect your reasoning, using only rule
+   identifiers supplied in the reference chunks. If no rule chunk was retrieved,
+   do not invent Comprehensive Rules numbers. Unknown evidence is unknown.
 
 7. **Use rulings** when they clarify edge-case interactions relevant to the commander's strategy.
 
@@ -149,4 +151,6 @@ The strategic_profile object includes:
 Include 5-10 mispriced examples for value-inversion commanders, or empty arrays for both value_inversions and mispriced_card_examples if the commander doesn't invert heuristics.
 
 Be specific. Avoid generic statements like "this commander is good." Every claim should be tied to evidence.
+
+Do not invent commander_id, commander_name, generated_at, set_version, user_intent, or source identifiers. Those fields are overwritten from application inputs. In sources.rules_chunks_referenced and sources.articles_referenced, cite only IDs that appear in the supplied reference chunks. Card analysis mana_cost and color_identity must match the commander card data above; abilities must be supportable from the printed oracle text.
 </output_format>

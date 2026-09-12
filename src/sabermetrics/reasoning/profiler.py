@@ -9,14 +9,24 @@ import json
 import logging
 import sqlite3
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from sabermetrics.errors import DegradableError
+from sabermetrics.db import row_to_card
+from sabermetrics.errors import CommanderNotFoundError, DegradableError
+from sabermetrics.models.card import Card
 from sabermetrics.models.profile import CommanderProfile
+from sabermetrics.reasoning.profile_grounding import (
+    CACHE_PROVENANCE_VERSION,
+    apply_canonical_profile_metadata,
+    aware_utc,
+    cache_row_schema_is_current,
+    extract_json_payload,
+    profile_cache_is_valid,
+    stamp_cache_provenance,
+)
 from sabermetrics.reference_layer.evidence import EvidenceAggregator
 
 if TYPE_CHECKING:
@@ -73,6 +83,7 @@ class ProfileManager:
             DegradableError: LLM unavailable, returns cached if available.
         """
         start_time = time.time()
+        commander = self._load_commander(request.commander_id)
 
         # Compute cache key
         intent_hash = (
@@ -84,13 +95,17 @@ class ProfileManager:
         # Check cache
         if not request.force_refresh:
             cached = self._get_cached_profile(
-                request.commander_id, intent_hash
+                request.commander_id,
+                intent_hash,
+                commander=commander,
+                user_intent=request.user_intent,
             )
             if cached is not None:
                 elapsed = time.time() - start_time
                 logger.info(
                     "Cache hit for commander %s (%.1fms)",
-                    request.commander_id, elapsed * 1000,
+                    request.commander_id,
+                    elapsed * 1000,
                 )
                 return ProfileResult(
                     profile=cached,
@@ -112,12 +127,13 @@ class ProfileManager:
         except Exception as e:
             # Try returning cached profile on LLM failure
             cached = self._get_cached_profile(
-                request.commander_id, intent_hash
+                request.commander_id,
+                intent_hash,
+                commander=commander,
+                user_intent=request.user_intent,
             )
             if cached is not None:
-                logger.warning(
-                    "LLM failed, returning stale cache: %s", e
-                )
+                logger.warning("LLM failed, returning stale cache: %s", e)
                 elapsed = time.time() - start_time
                 return ProfileResult(
                     profile=cached,
@@ -135,7 +151,9 @@ class ProfileManager:
         elapsed = time.time() - start_time
         logger.info(
             "Profile generated for %s in %.1fs ($%.4f)",
-            evidence.commander.name, elapsed, cost,
+            evidence.commander.name,
+            elapsed,
+            cost,
         )
 
         return ProfileResult(
@@ -145,23 +163,64 @@ class ProfileManager:
             generation_time_seconds=elapsed,
         )
 
+    def _load_commander(self, commander_id: str) -> Card:
+        """Load canonical commander identity from the card table."""
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            cursor = conn.execute("SELECT * FROM cards WHERE id = ?", (commander_id,))
+            row = cursor.fetchone()
+            if row is None:
+                raise CommanderNotFoundError(
+                    f"Commander not found in DB: {commander_id}"
+                )
+            price_row = conn.execute(
+                "SELECT price_usd FROM card_prices "
+                "WHERE card_id = ? ORDER BY snapshot_date DESC LIMIT 1",
+                (commander_id,),
+            ).fetchone()
+            price = price_row["price_usd"] if price_row else None
+            return row_to_card(row, price_usd=price)
+        finally:
+            conn.close()
+
+    def _mark_profile_stale(self, commander_id: str) -> None:
+        """Invalidate a cached row so invented/inconsistent metadata is not reused."""
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.execute(
+                "UPDATE commander_profiles SET is_stale = 1 WHERE commander_id = ?",
+                (commander_id,),
+            )
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.warning("Failed to invalidate profile cache: %s", e)
+        finally:
+            conn.close()
+
     def _get_cached_profile(
-        self, commander_id: str, intent_hash: str | None
+        self,
+        commander_id: str,
+        intent_hash: str | None,
+        commander: Card | None = None,
+        user_intent: str | None = None,
     ) -> CommanderProfile | None:
-        """Check for cached profile in database."""
+        """Return a cached profile only when canonical identity/set/intent match."""
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
         try:
             if intent_hash:
                 cursor = conn.execute(
-                    "SELECT profile_json FROM commander_profiles "
+                    "SELECT profile_json, set_version, schema_version "
+                    "FROM commander_profiles "
                     "WHERE commander_id = ? AND user_intent_hash = ? "
                     "AND is_stale = 0",
                     (commander_id, intent_hash),
                 )
             else:
                 cursor = conn.execute(
-                    "SELECT profile_json FROM commander_profiles "
+                    "SELECT profile_json, set_version, schema_version "
+                    "FROM commander_profiles "
                     "WHERE commander_id = ? AND user_intent_hash IS NULL "
                     "AND is_stale = 0",
                     (commander_id,),
@@ -171,10 +230,46 @@ class ProfileManager:
             if row is None:
                 return None
 
+            card = commander or self._load_commander(commander_id)
+            if not cache_row_schema_is_current(row["schema_version"]):
+                logger.info(
+                    "Rejecting unmarked legacy profile cache for %s",
+                    commander_id,
+                )
+                self._mark_profile_stale(commander_id)
+                return None
+            if row["set_version"] != card.set_code:
+                logger.info(
+                    "Rejecting cached profile for %s: set_version %s != %s",
+                    commander_id,
+                    row["set_version"],
+                    card.set_code,
+                )
+                self._mark_profile_stale(commander_id)
+                return None
+
             profile_data = json.loads(row["profile_json"])
-            return CommanderProfile(**profile_data)
-        except Exception as e:
+            if not profile_cache_is_valid(
+                profile_data, commander=card, user_intent=user_intent
+            ):
+                logger.info(
+                    "Rejecting cached profile for %s: identity/set/metadata mismatch",
+                    commander_id,
+                )
+                self._mark_profile_stale(commander_id)
+                return None
+            profile = CommanderProfile(**profile_data)
+            return profile
+        except (
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+            sqlite3.Error,
+            CommanderNotFoundError,
+            ValidationError,
+        ) as e:
             logger.warning("Cache read failed: %s", e)
+            self._mark_profile_stale(commander_id)
             return None
         finally:
             conn.close()
@@ -202,9 +297,10 @@ class ProfileManager:
             for c in evidence.reference_chunks
         )
 
-        rulings_text = "\n".join(
-            f"- {r.ruling_text}" for r in evidence.rulings
-        ) or "No specific rulings found."
+        rulings_text = (
+            "\n".join(f"- {r.ruling_text}" for r in evidence.rulings)
+            or "No specific rulings found."
+        )
 
         # EDHREC data formatting
         edhrec = evidence.edhrec_data or {}
@@ -215,11 +311,14 @@ class ProfileManager:
         if isinstance(top_cards, str):
             top_cards = json.loads(top_cards)
 
-        top_cards_text = "\n".join(
-            f"- {tc.get('card_name', tc.get('name', '?'))}: "
-            f"{tc.get('inclusion_pct', '?')}%"
-            for tc in top_cards[:30]
-        ) or "No EDHREC data available."
+        top_cards_text = (
+            "\n".join(
+                f"- {tc.get('card_name', tc.get('name', '?'))}: "
+                f"{tc.get('inclusion_pct', '?')}%"
+                for tc in top_cards[:30]
+            )
+            or "No EDHREC data available."
+        )
 
         # Tournament data
         tourney = evidence.tournament_data or {}
@@ -228,10 +327,13 @@ class ProfileManager:
         tourney_sample = tourney.get("tournament_count", 0)
 
         # Reddit topics
-        reddit_topics = "\n".join(
-            f"- {t.title} ({t.upvotes} upvotes)"
-            for t in evidence.reddit_threads[:10]
-        ) or "No Reddit discussions found."
+        reddit_topics = (
+            "\n".join(
+                f"- {t.title} ({t.upvotes} upvotes)"
+                for t in evidence.reddit_threads[:10]
+            )
+            or "No Reddit discussions found."
+        )
 
         # User intent section
         user_intent_section = ""
@@ -245,67 +347,134 @@ class ProfileManager:
             )
 
         # Profile schema (simplified for the LLM)
-        profile_schema = json.dumps({
-            "commander_id": "string (Scryfall ID)",
-            "commander_name": "string",
-            "generated_at": "ISO datetime",
-            "set_version": "string (latest set code)",
-            "card_analysis": {
-                "mana_cost": "string", "color_identity": ["string"],
-                "core_mechanic": "string",
-                "triggered_abilities": ["string"],
-                "activated_abilities": ["string"],
-                "static_abilities": ["string"],
-                "evasion_or_protection": "string or null",
-            },
-            "behavioral_signals": {
-                "total_decks_tracked": "int",
-                "edhrec_themes": ["string"],
-                "most_included_cards": [{"card_name": "str", "inclusion_pct": 0.0}],
-                "average_deck_price_usd": 0.0,
-                "average_cmc": 0.0,
-                "tournament_win_rate": "float or null",
-                "tournament_sample_size": 0,
-            },
-            "community_signals": {
-                "reddit_thread_count": "int",
-                "named_archetypes": ["string"],
-                "primer_articles_referenced": ["string"],
-                "emerging_strategies": ["string"],
-            },
-            "strategic_profile": {
-                "primary_archetype": "string",
-                "game_plan_summary": "string",
-                "win_conditions": [{"description": "str", "key_cards": ["str"], "reliability": "primary|secondary|backup"}],
-                "build_paths": [{"name": "str", "description": "str", "consensus_status": "mainstream|emerging|underexplored", "key_card_categories": ["str"]}],
-                "synergy_priorities": {"high": ["str"], "medium": ["str"], "low": ["str"]},
-                "anti_synergies": [{"description": "str", "cards_to_avoid": ["str"], "reasoning": "str"}],
-                "strategic_constraints": {"mana_base_requirements": "str", "interaction_density": "high|medium|low", "speed_tier": "fast|midrange|slow"},
-                "power_indicators": {"estimated_ceiling_bracket": "1-5", "estimated_floor_bracket": "1-5", "notes": "str"},
-                "value_inversions": [{"normal_heuristic": "str", "inverted_value": "str", "desired_characteristics": ["str"], "undesired_characteristics": ["str (traits that lose value)"], "evaluation_guidance": "str"}],
-                "engine_dependencies": [{"engine": "str (what the deck must build around)", "engine_card_traits": ["str (oracle text patterns / card types that feed the engine)"], "dependent_outputs": ["str (effects the engine produces)"], "false_synergy_warning": "str (why cards matching outputs but not engine are traps)"}],
-                "mispriced_card_examples": [{"card_name": "str (exact Scryfall name)", "why_undervalued": "str (one sentence)"}],
-            },
-            "user_intent": {
-                "provided": "bool",
-                "description": "string or null",
-                "divergence_from_consensus": "string or null",
-            },
-            "sources": {
-                "rules_chunks_referenced": ["string"],
-                "articles_referenced": ["string"],
-                "evidence_freshness": {
-                    "edhrec_last_updated": "datetime or null",
-                    "topdeck_last_updated": "datetime or null",
-                    "reddit_last_searched": "datetime or null",
+        profile_schema = json.dumps(
+            {
+                "commander_id": "string (Scryfall ID)",
+                "commander_name": "string",
+                "generated_at": "ISO datetime",
+                "set_version": "string (latest set code)",
+                "card_analysis": {
+                    "mana_cost": "string",
+                    "color_identity": ["string"],
+                    "core_mechanic": "string",
+                    "triggered_abilities": ["string"],
+                    "activated_abilities": ["string"],
+                    "static_abilities": ["string"],
+                    "evasion_or_protection": "string or null",
+                },
+                "behavioral_signals": {
+                    "total_decks_tracked": "int",
+                    "edhrec_themes": ["string"],
+                    "most_included_cards": [{"card_name": "str", "inclusion_pct": 0.0}],
+                    "average_deck_price_usd": 0.0,
+                    "average_cmc": 0.0,
+                    "tournament_win_rate": "float or null",
+                    "tournament_sample_size": 0,
+                },
+                "community_signals": {
+                    "reddit_thread_count": "int",
+                    "named_archetypes": ["string"],
+                    "primer_articles_referenced": ["string"],
+                    "emerging_strategies": ["string"],
+                },
+                "strategic_profile": {
+                    "primary_archetype": "string",
+                    "game_plan_summary": "string",
+                    "win_conditions": [
+                        {
+                            "description": "str",
+                            "key_cards": ["str"],
+                            "reliability": "primary|secondary|backup",
+                        }
+                    ],
+                    "build_paths": [
+                        {
+                            "name": "str",
+                            "description": "str",
+                            "consensus_status": "mainstream|emerging|underexplored",
+                            "key_card_categories": ["str"],
+                        }
+                    ],
+                    "synergy_priorities": {
+                        "high": ["str"],
+                        "medium": ["str"],
+                        "low": ["str"],
+                    },
+                    "anti_synergies": [
+                        {
+                            "description": "str",
+                            "cards_to_avoid": ["str"],
+                            "reasoning": "str",
+                        }
+                    ],
+                    "strategic_constraints": {
+                        "mana_base_requirements": "str",
+                        "interaction_density": "high|medium|low",
+                        "speed_tier": "fast|midrange|slow",
+                    },
+                    "power_indicators": {
+                        "estimated_ceiling_bracket": "1-5",
+                        "estimated_floor_bracket": "1-5",
+                        "notes": "str",
+                    },
+                    "value_inversions": [
+                        {
+                            "normal_heuristic": "str",
+                            "inverted_value": "str",
+                            "desired_characteristics": ["str"],
+                            "undesired_characteristics": [
+                                "str (traits that lose value)"
+                            ],
+                            "evaluation_guidance": "str",
+                        }
+                    ],
+                    "engine_dependencies": [
+                        {
+                            "engine": "str (what the deck must build around)",
+                            "engine_card_traits": [
+                                "str (oracle text patterns / card types that feed the engine)"
+                            ],
+                            "dependent_outputs": ["str (effects the engine produces)"],
+                            "false_synergy_warning": "str (why cards matching outputs but not engine are traps)",
+                        }
+                    ],
+                    "mispriced_card_examples": [
+                        {
+                            "card_name": "str (exact Scryfall name)",
+                            "why_undervalued": "str (one sentence)",
+                        }
+                    ],
+                },
+                "user_intent": {
+                    "provided": "bool",
+                    "description": "string or null",
+                    "divergence_from_consensus": "string or null",
+                },
+                "sources": {
+                    "rules_chunks_referenced": ["string"],
+                    "articles_referenced": ["string"],
+                    "evidence_freshness": {
+                        "edhrec_last_updated": "datetime or null",
+                        "topdeck_last_updated": "datetime or null",
+                        "reddit_last_searched": "datetime or null",
+                    },
                 },
             },
-        }, indent=2)
+            indent=2,
+        )
 
         # Format prompt
         commander = evidence.commander
-        ref_kw_str = ", ".join(evidence.referenced_keywords) if evidence.referenced_keywords else "None"
-        ref_mech_str = ", ".join(evidence.referenced_mechanics) if evidence.referenced_mechanics else "None"
+        ref_kw_str = (
+            ", ".join(evidence.referenced_keywords)
+            if evidence.referenced_keywords
+            else "None"
+        )
+        ref_mech_str = (
+            ", ".join(evidence.referenced_mechanics)
+            if evidence.referenced_mechanics
+            else "None"
+        )
 
         prompt_text = template.format(
             reference_chunks=reference_text,
@@ -350,53 +519,15 @@ class ProfileManager:
             call_type="profile_synthesis",
         )
 
-        # Parse and validate response
-        response_text = result.content.strip()
-        # Extract JSON from potential markdown code blocks
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            json_lines = []
-            in_block = False
-            for line in lines:
-                if line.startswith("```") and not in_block:
-                    in_block = True
-                    continue
-                elif line.startswith("```") and in_block:
-                    break
-                elif in_block:
-                    json_lines.append(line)
-            response_text = "\n".join(json_lines)
-
-        profile_data = json.loads(response_text)
-
-        # Ensure required fields
-        profile_data.setdefault("commander_id", evidence.commander.id)
-        profile_data.setdefault("commander_name", evidence.commander.name)
-        profile_data.setdefault("generated_at", datetime.now().isoformat())
-        profile_data.setdefault("set_version", evidence.commander.set_code)
-
-        # Ensure user_intent
-        if "user_intent" not in profile_data:
-            profile_data["user_intent"] = {
-                "provided": bool(request.user_intent),
-                "description": request.user_intent,
-            }
-
-        # Ensure sources
-        if "sources" not in profile_data:
-            profile_data["sources"] = {
-                "rules_chunks_referenced": [
-                    c.section or c.id for c in evidence.reference_chunks
-                ],
-                "articles_referenced": [],
-                "evidence_freshness": {
-                    "edhrec_last_updated": None,
-                    "topdeck_last_updated": None,
-                    "reddit_last_searched": datetime.now().isoformat()
-                    if evidence.reddit_threads
-                    else None,
-                },
-            }
+        # Parse and validate response. Identity, time, set, intent, and
+        # evidence provenance are overwritten from application inputs.
+        profile_data = extract_json_payload(result.content)
+        profile_data = apply_canonical_profile_metadata(
+            profile_data,
+            commander=evidence.commander,
+            user_intent=request.user_intent,
+            evidence=evidence,
+        )
 
         profile = CommanderProfile(**profile_data)
         return profile, result.cost_usd
@@ -410,7 +541,10 @@ class ProfileManager:
         """Persist profile to commander_profiles table."""
         conn = sqlite3.connect(str(self.db_path))
         try:
-            profile_json = profile.model_dump_json()
+            generated = aware_utc(profile.generated_at)
+            stored = profile.model_copy(update={"generated_at": generated})
+            payload = stamp_cache_provenance(json.loads(stored.model_dump_json()))
+            profile_json = json.dumps(payload)
 
             conn.execute(
                 "INSERT OR REPLACE INTO commander_profiles "
@@ -418,13 +552,13 @@ class ProfileManager:
                 "set_version, generated_at, is_stale, schema_version) "
                 "VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
                 (
-                    profile.commander_id,
+                    stored.commander_id,
                     profile_json,
                     user_intent,
                     intent_hash,
-                    profile.set_version,
-                    profile.generated_at.isoformat(),
-                    profile.schema_version,
+                    stored.set_version,
+                    generated.isoformat(),
+                    CACHE_PROVENANCE_VERSION,
                 ),
             )
             conn.commit()
