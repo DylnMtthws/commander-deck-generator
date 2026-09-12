@@ -1,4 +1,4 @@
-"""DeepSeek transport with bounded retries, token accounting and a spend ceiling.
+"""Hugging Face transport with bounded retries, token accounting and a spend ceiling.
 
 All generation calls use this boundary. The historical AnthropicClient name is
 an import alias for old callers; no requests are sent to Anthropic.
@@ -33,12 +33,16 @@ def cost_attribution(user_id: str | None, deck_id: str | None) -> Iterator[None]
         _cost_context.reset(token)
 
 
-ALLOWED_MODELS = {"deepseek-flash"}
+ALLOWED_MODELS = {"deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"}
 KNOWN_RETIRED_MODELS = {"deepseek-v4-flash", "claude-3-opus-20240229"}
-# Peak-rate estimates, deliberately conservative during off-peak hours.
-# Source: https://api-docs.deepseek.com/quick_start/pricing/ (2026-09-12).
+# DeepInfra standard-tier estimates via Hugging Face, checked 2026-09-12.
+# https://deepinfra.com/deepseek-ai/DeepSeek-V4-Flash-0731/api
 MODEL_PRICING = {
-    "deepseek-flash": {"input": 0.30, "cached_input": 0.006, "output": 1.20}
+    "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra": {
+        "input": 0.06,
+        "cached_input": 0.015,
+        "output": 0.18,
+    }
 }
 
 
@@ -54,7 +58,7 @@ def validate_configured_models(configured: dict[str, str]) -> None:
     for setting, model in configured.items():
         if model in KNOWN_RETIRED_MODELS:
             raise FatalError(
-                f"Configured model '{model}' is retired; use deepseek-flash"
+                f"Configured model '{model}' is retired; use deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
             )
         if model not in ALLOWED_MODELS:
             raise FatalError(
@@ -96,12 +100,12 @@ class ModelClient:
                 )
             }
         )
-        key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        key = os.environ.get("HF_TOKEN", "").strip()
         if not key:
-            raise FatalError("DEEPSEEK_API_KEY is not configured")
-        # A fixed origin prevents accidentally sending this credential to a router.
+            raise FatalError("HF_TOKEN is not configured")
+        # Pin the credential origin and disable redirects to prevent token forwarding.
         self._client = httpx.Client(
-            base_url="https://api.deepseek.com",
+            base_url="https://router.huggingface.co/v1",
             timeout=httpx.Timeout(180, connect=15),
             headers={"Authorization": "Bearer " + key},
             follow_redirects=False,
@@ -157,7 +161,7 @@ class ModelClient:
             "messages": api_messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "thinking": {"type": "disabled"},
+            "reasoning_effort": "none",
         }
         for attempt in range(3):
             if self.get_monthly_spend() >= settings.llm.monthly_cost_ceiling_usd:
@@ -169,14 +173,16 @@ class ModelClient:
                 code = exc.response.status_code
                 if code != 429 and code < 500:
                     raise FatalError(
-                        f"DeepSeek API rejected the request (HTTP {code})"
+                        f"Hugging Face API rejected the request (HTTP {code})"
                     ) from None
             except httpx.TransportError:
                 pass
             else:
                 break
             if attempt == 2:
-                raise RecoverableError("DeepSeek request failed after three attempts")
+                raise RecoverableError(
+                    "Hugging Face request failed after three attempts"
+                )
             time.sleep(2 ** (attempt + 1))
         try:
             body = response.json()
@@ -205,13 +211,13 @@ class ModelClient:
             )
         except (ValueError, KeyError, IndexError, TypeError):
             raise FatalError(
-                "DeepSeek returned a malformed response or usage record"
+                "Hugging Face returned a malformed response or usage record"
             ) from None
         # Even a truncated/empty answer consumed tokens. Record it before rejection.
         self._log_cost(result, call_type)
         if choice.get("finish_reason") != "stop" or not result.content.strip():
             raise RecoverableError(
-                "DeepSeek returned an incomplete answer; usage was recorded"
+                "Hugging Face returned an incomplete answer; usage was recorded"
             )
         logger.info(
             "Model call: model=%s type=%s input=%d cached=%d output=%d estimated_cost=$%.6f",
@@ -234,7 +240,7 @@ class ModelClient:
         validate_configured_models({"pricing": model})
         from sabermetrics.config import settings
 
-        pricing = settings.llm.deepseek_pricing
+        pricing = settings.llm.provider_pricing
         return round(
             (
                 (input_tokens - cached_input_tokens) * pricing.input

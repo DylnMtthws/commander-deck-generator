@@ -43,7 +43,7 @@ jobs:
           # It is set anyway as a guard -- a dummy value means a test that ever
           # does reach for the API fails loudly on a bad key instead of
           # depending on whatever happens to be in the runner's environment.
-          DEEPSEEK_API_KEY: dummy-key-not-used-by-tests
+          HF_TOKEN: dummy-key-not-used-by-tests
         run: pytest -q
 
   container:

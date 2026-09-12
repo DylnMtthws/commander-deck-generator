@@ -13,13 +13,13 @@ user:
     price_efficiency: 0.0
 
 llm:
-  profile_model: "deepseek-flash"
-  fit_model: "deepseek-flash"
-  synthesis_model: "deepseek-flash"
-  refresh_model: "deepseek-flash"
-  template_model: "deepseek-flash"
-  # Peak USD per million tokens; conservative at off-peak times (2026-09-12).
-  deepseek_pricing: {input: 0.30, cached_input: 0.006, output: 1.20}
+  profile_model: "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+  fit_model: "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+  synthesis_model: "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+  refresh_model: "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+  template_model: "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+  # DeepInfra standard tier via Hugging Face; USD per million tokens (2026-09-12).
+  provider_pricing: {input: 0.06, cached_input: 0.015, output: 0.18}
   max_candidates_for_llm_fit: 50
   prompt_caching: true
   monthly_cost_ceiling_usd: 15.0

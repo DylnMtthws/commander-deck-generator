@@ -59,10 +59,10 @@ print(
 )
 
 # The installed package must carry prompts, not just importable Python modules.
-from sabermetrics.reasoning.prompts import load_prompt
 from sabermetrics.config import settings
+from sabermetrics.reasoning.prompts import load_prompt
 
 assert "schema" in load_prompt("profile_synthesis").lower()
-assert settings.llm.profile_model == "deepseek-flash"
-assert settings.llm.fit_model == "deepseek-flash"
+assert settings.llm.profile_model == "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+assert settings.llm.fit_model == "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
 print("Installed generation prompts and DeepSeek defaults passed")

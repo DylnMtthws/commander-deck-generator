@@ -9,18 +9,18 @@ from pathlib import Path
 
 import pytest
 
+from sabermetrics.models.llm_responses import (
+    CardFitResponse,
+    DeckSynthesisResponse,
+)
 from sabermetrics.reasoning.client import (
     ALLOWED_MODELS,
     MODEL_PRICING,
     AnthropicClient,
     CallResult,
 )
-from sabermetrics.reasoning.prompts import list_prompts, load_prompt
-from sabermetrics.models.llm_responses import (
-    CardFitResponse,
-    DeckSynthesisResponse,
-)
 from sabermetrics.reasoning.profiler import ProfileManager
+from sabermetrics.reasoning.prompts import list_prompts, load_prompt
 from sabermetrics.reference_layer.evidence import EvidenceAggregator
 
 HAS_API_KEY = bool(os.environ.get("ANTHROPIC_API_KEY"))
@@ -73,13 +73,13 @@ def test_relevance_screen_template() -> None:
 
 def test_allowed_models() -> None:
     """Allowed models list includes expected models."""
-    assert "deepseek-flash" in ALLOWED_MODELS
-    assert ALLOWED_MODELS == {"deepseek-flash"}
+    assert "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra" in ALLOWED_MODELS
+    assert ALLOWED_MODELS == {"deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"}
 
 
 def test_model_pricing() -> None:
     """Model pricing structure is correct."""
-    for model in ["deepseek-flash"]:
+    for model in ["deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"]:
         pricing = MODEL_PRICING[model]
         assert "input" in pricing
         assert "cached_input" in pricing
@@ -94,7 +94,7 @@ def test_cost_estimation() -> None:
 
     # Manually compute expected cost for Haiku
     # 1000 input tokens, 500 cached, 200 output
-    pricing = MODEL_PRICING["deepseek-flash"]
+    pricing = MODEL_PRICING["deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"]
     expected = (
         500 * pricing["input"] / 1_000_000  # uncached
         + 500 * pricing["cached_input"] / 1_000_000  # cached

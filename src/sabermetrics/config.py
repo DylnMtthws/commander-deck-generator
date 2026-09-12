@@ -28,20 +28,20 @@ class UserSettings(BaseModel):
 class ModelPricing(BaseModel):
     """Conservative USD-per-million estimates; update when provider rates change."""
 
-    input: float = Field(default=0.30, ge=0)
-    cached_input: float = Field(default=0.006, ge=0)
-    output: float = Field(default=1.20, ge=0)
+    input: float = Field(default=0.06, ge=0)
+    cached_input: float = Field(default=0.015, ge=0)
+    output: float = Field(default=0.18, ge=0)
 
 
 class LLMSettings(BaseModel):
     """LLM model and cost settings."""
 
-    profile_model: str = "deepseek-flash"
-    fit_model: str = "deepseek-flash"
-    synthesis_model: str = "deepseek-flash"
-    refresh_model: str = "deepseek-flash"
-    template_model: str = "deepseek-flash"
-    deepseek_pricing: ModelPricing = Field(default_factory=ModelPricing)
+    profile_model: str = "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+    fit_model: str = "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+    synthesis_model: str = "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+    refresh_model: str = "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+    template_model: str = "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+    provider_pricing: ModelPricing = Field(default_factory=ModelPricing)
     max_candidates_for_llm_fit: int = 50
     prompt_caching: bool = True
     monthly_cost_ceiling_usd: float = 5.0

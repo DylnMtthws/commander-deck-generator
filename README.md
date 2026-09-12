@@ -76,7 +76,7 @@ export SABER_OWNER_EMAIL=you@example.com
 export SABER_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 export SABER_COOKIE_SECURE=0
 sabermetrics create-admin --email "$SABER_OWNER_EMAIL"
-# Set DEEPSEEK_API_KEY securely in your shell before generating.
+# Set HF_TOKEN securely in your shell before generating.
 sabermetrics serve
 ```
 
@@ -98,16 +98,23 @@ availability. Settings, scoring weights, model IDs, and cost estimates live in
 
 ## Model provider and cost
 
-All generation stages use DeepSeek's direct API with `deepseek-flash`, currently
-DeepSeek V4.1 Flash. No Anthropic key is required. Non-thinking mode preserves
-completion budgets for the existing JSON parsers; schema validation and legality
-checks remain in the application. Prefix caching is automatic at the provider.
+All generation stages use Hugging Face Inference Providers, pinned to
+`deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra`. Requests go to
+`https://router.huggingface.co/v1` and authenticate with `HF_TOKEN`. Create a
+[fine-grained token](https://huggingface.co/settings/tokens) with **Make calls to
+Inference Providers** permission and enable credits/billing in your Hugging Face
+account. This is serverless inference; no dedicated GPU endpoint is needed.
+[Hugging Face handles billing at provider rates](https://huggingface.co/docs/inference-providers/en/pricing).
 
-The cost ledger uses configurable **peak-rate estimates** of $0.30 / million
-uncached input, $0.006 / million cached input, and $1.20 / million output tokens.
-Off-peak billing is lower. These are conservative estimates, not invoices; rates
-were checked September 12, 2026 against the
-[official pricing](https://api-docs.deepseek.com/quick_start/pricing/).
+Reasoning is disabled to preserve completion budgets for the existing JSON
+parsers; schema validation and legality checks remain in the application.
+Prefix caching is automatic at the provider. Pinning the provider keeps routing
+and cost estimates predictable.
+
+The cost ledger uses configurable standard-tier estimates of **$0.06 / million
+uncached input, $0.015 / million cached input, and $0.18 / million output tokens**.
+These are estimates, not invoices; rates were checked September 12, 2026 against
+[DeepInfra's model pricing](https://deepinfra.com/deepseek-ai/DeepSeek-V4-Flash-0731/api).
 The existing $15 rolling-30-day spend threshold remains configured. Invalid or
 truncated answers with valid usage counters are charged to the ledger before
 being rejected. Deck quality with this model still requires live evaluation.

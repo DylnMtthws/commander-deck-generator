@@ -17,7 +17,7 @@ from scripts.setup_db import setup_database
 def client(tmp_path, monkeypatch):
     path = tmp_path / "calls.db"
     setup_database(path)
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "private-test-key")
+    monkeypatch.setenv("HF_TOKEN", "private-test-key")
     result = ModelClient(path)
     yield result
     result._client.close()
@@ -34,7 +34,7 @@ def body(finish="stop", content='{"ok":true}'):
         ],
         "usage": {
             "prompt_tokens": 1000,
-            "prompt_cache_hit_tokens": 600,
+            "prompt_tokens_details": {"cached_tokens": 600},
             "completion_tokens": 200,
         },
     }
@@ -43,7 +43,7 @@ def body(finish="stop", content='{"ok":true}'):
 def mock(client, handler):
     client._client.close()
     client._client = httpx.Client(
-        base_url="https://api.deepseek.com",
+        base_url="https://router.huggingface.co/v1",
         headers={"Authorization": "Bearer private-test-key"},
         transport=httpx.MockTransport(handler),
     )
@@ -51,7 +51,7 @@ def mock(client, handler):
 
 def call(client):
     return client.call_with_cache(
-        model="deepseek-flash",
+        model="deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra",
         system="Return JSON",
         messages=[{"role": "user", "content": "test"}],
         call_type="vet",
@@ -74,10 +74,10 @@ def test_protocol_caching_and_cost_attribution(client):
     before = copy.deepcopy(messages)
 
     def handler(request):
-        assert str(request.url) == "https://api.deepseek.com/chat/completions"
+        assert str(request.url) == "https://router.huggingface.co/v1/chat/completions"
         payload = json.loads(request.content)
-        assert payload["model"] == "deepseek-flash"
-        assert payload["thinking"] == {"type": "disabled"}
+        assert payload["model"] == "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+        assert payload["reasoning_effort"] == "none"
         assert payload["messages"][1]["content"] == "Card facts"
         assert payload["max_tokens"] == 4000
         return httpx.Response(200, json=body())
@@ -85,18 +85,28 @@ def test_protocol_caching_and_cost_attribution(client):
     mock(client, handler)
     with cost_attribution("owner", "deck"):
         result = client.call_with_cache(
-            "deepseek-flash", "Return JSON", messages, cache_breakpoints=[0]
+            "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra",
+            "Return JSON",
+            messages,
+            cache_breakpoints=[0],
         )
     assert messages == before
     assert result.content == '{"ok":true}'
     assert result.cost_usd == pytest.approx(
-        (400 * 0.30 + 600 * 0.006 + 200 * 1.20) / 1_000_000
+        (400 * 0.06 + 600 * 0.015 + 200 * 0.18) / 1_000_000
     )
     with sqlite3.connect(client.db_path) as conn:
         row = conn.execute(
             "SELECT user_id,deck_id,model,input_tokens,cached_input_tokens,output_tokens FROM cost_log"
         ).fetchone()
-    assert row == ("owner", "deck", "deepseek-flash", 1000, 600, 200)
+    assert row == (
+        "owner",
+        "deck",
+        "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra",
+        1000,
+        600,
+        200,
+    )
 
 
 def test_ceiling_stops_call_before_network(client, monkeypatch):
@@ -163,8 +173,24 @@ def test_missing_usage_is_not_silently_zero_cost(client):
         call(client)
 
 
-def test_key_required_and_no_anthropic_fallback(tmp_path, monkeypatch):
-    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+def test_hf_key_required_and_no_other_provider_fallback(tmp_path, monkeypatch):
+    monkeypatch.delenv("HF_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-be-used")
-    with pytest.raises(FatalError, match="DEEPSEEK_API_KEY"):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "must-not-be-used")
+    with pytest.raises(FatalError, match="HF_TOKEN"):
         ModelClient(tmp_path / "unused.db")
+
+
+def test_client_pins_hugging_face_origin_and_does_not_follow_redirects(client):
+    assert str(client._client.base_url) == "https://router.huggingface.co/v1/"
+    assert client._client.headers["Authorization"] == "Bearer private-test-key"
+    assert client._client.follow_redirects is False
+
+
+def test_absent_cache_counter_bills_all_input_at_standard_rate(client):
+    response = body()
+    response["usage"].pop("prompt_tokens_details")
+    mock(client, lambda _: httpx.Response(200, json=response))
+    result = call(client)
+    assert result.cached_input_tokens == 0
+    assert result.cost_usd == pytest.approx((1000 * 0.06 + 200 * 0.18) / 1_000_000)
