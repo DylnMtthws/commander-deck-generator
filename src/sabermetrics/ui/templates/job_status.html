@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Build status{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-xl rounded-2xl border border-line bg-panel p-6 shadow-panel">
+    <h1 class="text-2xl font-bold tracking-tight">Deck generation</h1>
+    <p class="mt-1 text-sm text-muted">Your build continues if you close this page. Return here to check its progress.</p>
+
+    <dl class="mt-6 space-y-3 text-sm">
+        <div class="flex justify-between gap-4">
+            <dt class="text-muted">State</dt>
+            <dd class="font-medium">{{ job.status }}</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+            <dt class="text-muted">Stage</dt>
+            <dd>{{ job.stage_label }}</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+            <dt class="text-muted">Progress</dt>
+            <dd>{{ job.progress or 0 }}%</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+            <dt class="text-muted">Elapsed</dt>
+            <dd>{{ job.elapsed_seconds }}s</dd>
+        </div>
+    </dl>
+
+    <div class="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-field" role="progressbar"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ job.progress or 0 }}">
+        <div class="h-full rounded-full bg-brand" style="width: {{ job.progress or 0 }}%"></div>
+    </div>
+
+    {% if job.status == 'failed' %}
+    <p class="mt-4 rounded-xl border border-brand/40 bg-brand/10 px-4 py-3 text-sm text-brand-hover" role="alert">
+        {{ job.error or 'Deck generation failed. You can retry from the commander page.' }}
+    </p>
+    <p class="mt-3 text-sm">
+        <a class="font-medium text-brand hover:text-brand-hover" href="{{ url_for('main.index') }}">Return home</a>
+        to retry. This unfinished job will not run again by itself.
+    </p>
+    {% else %}
+    <p class="mt-4 text-sm text-muted">
+        This page refreshes automatically while your deck is being built.
+    </p>
+    <p class="mt-3 text-sm">
+        <a class="font-medium text-brand hover:text-brand-hover" href="{{ url_for('main.view_job', job_id=job.id) }}">Refresh status</a>
+    </p>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+{% if job.status in ('queued', 'running') %}
+<script>
+setTimeout(function () { window.location.reload(); }, 2500);
+</script>
+{% endif %}
+{% endblock %}

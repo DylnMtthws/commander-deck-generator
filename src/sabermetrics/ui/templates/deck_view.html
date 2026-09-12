@@ -40,6 +40,19 @@
     {% endfor %}
 </div>
 
+{% if quality_warnings %}
+<section class="mt-6 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5 shadow-panel"
+         aria-label="Quality warnings">
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-amber-200">Build notes</h2>
+    <p class="mt-1 text-xs text-muted">These notes describe unmet targets, missing signals, or review limits. They are not a claim that the requested bracket was achieved.</p>
+    <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-body">
+        {% for warning in quality_warnings %}
+        <li>{{ warning }}</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
 <!-- Charts -->
 <div class="mt-6 grid gap-4 lg:grid-cols-2">
     <div class="rounded-2xl border border-line bg-panel p-4 shadow-panel">

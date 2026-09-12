@@ -1,5 +1,6 @@
 """Container entry point; refuse public serving without an explicit owner."""
 
+import logging
 import os
 from pathlib import Path
 
@@ -10,6 +11,9 @@ from sabermetrics.ui.app import create_app
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
     if not os.environ.get("SABER_OWNER_EMAIL", "").strip():
         raise RuntimeError("SABER_OWNER_EMAIL is required")
     if len(os.environ.get("SABER_SECRET_KEY", "")) < 32:

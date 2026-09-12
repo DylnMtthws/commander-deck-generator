@@ -89,6 +89,10 @@ def create_app(db_path: Path | None = None) -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(main_bp)
 
+    from sabermetrics.generation_jobs import attach_to_app
+
+    attach_to_app(app)
+
     @app.get("/healthz")
     def health():
         from sabermetrics import db
