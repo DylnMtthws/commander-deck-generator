@@ -87,15 +87,13 @@ class ReferenceRetriever:
         self, query: ReferenceQuery
     ) -> list[RetrievedChunk]:
         """Retrieve chunks using cosine similarity over embeddings."""
-        # Compute query embedding
-        indexer = self._get_indexer()
-        query_embedding = indexer.compute_embedding(query.query_text)
-
-        # Load chunk embeddings (with caching)
+        # Empty available corpus must not construct an encoder/indexer.
         chunks_data = self._load_chunks_cache()
-
         if not chunks_data:
             return []
+
+        indexer = self._get_indexer()
+        query_embedding = indexer.compute_embedding(query.query_text)
 
         # Compute similarities
         results: list[tuple[float, dict]] = []

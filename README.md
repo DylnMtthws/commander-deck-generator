@@ -29,6 +29,19 @@ editing, and simulation product now lives in the separate Deck Lab repository.
   deterministic code owns assembly and final legality checks. Profile identity,
   set, timestamp, and evidence provenance come from trusted inputs. Final deck
   summaries are rendered from selected card facts, without a prose-model call.
+- **Prepared, measurable scoring.** Rule matching evaluates each card/rule once
+  and combines masks with NumPy. Persistent embeddings require an explicit model
+  revision; public-card facts can be prepared separately from user data. A local
+  220-card benchmark reproduced the reference matrix with 99.0% less matching time.
+- **Executable strategy plans.** Supported landfall intent reserves functional
+  enablers and payoffs before pruning, then compares three constrained builds.
+  Facts distinguish land access from ramp and preserve unsupported prerequisites
+  as visible findings. These are conservative supported shapes, not a full rules engine.
+- **C++ experiment boundary.** An optional authenticated adapter compares basic-land
+  color substitutions with fixed seeds and fresh confirmation trials. It refuses
+  unsupported land mechanics and labels its narrow land/commander scenario; it
+  cannot estimate multiplayer win rates. See the [implementation and measured
+  limits](docs/specs/informed-generation/validation.md).
 - **Durable background work.** SQLite job records expose actual build stages,
   survive browser reloads, and isolate status by owner. A process lock enforces
   one worker; abandoned builds fail visibly after restart instead of silently
@@ -55,16 +68,18 @@ flowchart TD
     Corpus[(Cards, decklists, rules)] --> Profile
     Corpus --> Filter[Legal pool + role scoring + Pareto filter]
     Profile --> Filter
-    Filter --> Packages[Template + infrastructure + empirical staples]
-    Packages --> Optimize[Synergy optimizer + swap refinement + budget repair]
+    Filter --> Packages[Verified plan + protected infrastructure + empirical staples]
+    Packages --> Optimize[Bounded variants + swap refinement + budget repair]
     Optimize --> Review[Batched model safety review]
-    Review --> Validate[Legality repair + synthesis + persistence]
+    Review --> Probe[Optional bounded C++ resource comparison]
+    Probe --> Validate[Final checks + evidence + persistence]
     Validate --> Export[Web views and deck exports]
 ```
 
 The model is useful for strategic interpretation, but it is not trusted to
 produce a legal list unaided. Price is a constraint, not a proxy for card quality.
-See [`pipeline/`](src/sabermetrics/pipeline/),
+See the [spec and operator setup](docs/specs/informed-generation/README.md),
+[`intelligence/`](src/sabermetrics/intelligence/), [`pipeline/`](src/sabermetrics/pipeline/),
 [`analytics/`](src/sabermetrics/analytics/), and
 [`reasoning/`](src/sabermetrics/reasoning/) for the implementation.
 

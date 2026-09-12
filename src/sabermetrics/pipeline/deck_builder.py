@@ -151,7 +151,10 @@ _PROGRESS_STAGES: dict[str, int] = {
     "template": 42,
     "infrastructure": 55,
     "optimize": 70,
+    "assemble": 74,
+    "refine": 78,
     "review": 82,
+    "simulate": 87,
     "narrative": 90,
     "persist": 96,
     "completed": 100,
@@ -218,6 +221,8 @@ class DeckBuilder:
         self._legality_backfill = 0
         self._stage_timings: dict[str, float] = {}
         self._engine_rationale = None
+        self._intelligence = {}
+        self._strategy_reserved = []
 
         # --- Build trace watchlist and create tracer ---
         watchlist: set[str] = set()
@@ -274,6 +279,17 @@ class DeckBuilder:
         per_card_ceiling = (
             request.budget_usd * _settings.pipeline.per_card_budget_fraction
         )
+        from sabermetrics.intelligence.cards import annotate, facts_for
+        from sabermetrics.intelligence.strategy import make_plan, reserve_plan
+
+        candidates = [annotate(c) for c in candidates if not facts_for(c).exclusion]
+        self._strategy_plan = make_plan(commander.model_dump(), request.user_intent)
+        self._strategy_reserved = reserve_plan(
+            self._strategy_plan, candidates, request.budget_usd
+        )
+        self._strategy_names = {c["name"] for c in self._strategy_reserved}
+        self._protected_names |= self._strategy_names
+
         requirement = parse_user_intent(request.user_intent)
         color_legal = getattr(self, "_color_legal_pool", candidates)
         self._engine_admission = admit_engine_candidates(
@@ -296,6 +312,28 @@ class DeckBuilder:
         candidates = self._structural_score(
             candidates, commander, request, profile_result
         )
+        if self._strategy_plan.archetype == "landfall":
+            for c in candidates:
+                capabilities = set(facts_for(c).capabilities)
+                aligned = capabilities & {
+                    "landfall_cards",
+                    "landfall_tokens",
+                    "land_ramp",
+                    "extra_land_play",
+                    "land_recursion",
+                    "land_from_hand",
+                }
+                if aligned:
+                    c["_cvar_score"] = min(1.0, float(c.get("_cvar_score", 0)) + 0.20)
+                # Generic alternate-win tags are not evidence of a landfall
+                # closing plan; don't let their quota crowd out the engine.
+                roles = json.loads(c.get("role_tags") or "[]")
+                if "wincon" in roles and not capabilities & {
+                    "landfall_tokens",
+                    "landfall_growth",
+                }:
+                    roles.remove("wincon")
+                    c["role_tags"] = json.dumps(roles or ["utility"])
         metrics["score"] = time.time() - t
         candidates = self._pareto_filter(candidates)
         metrics["4_pareto"] = time.time() - t
@@ -327,6 +365,14 @@ class DeckBuilder:
             candidates,
             request,
             exclude_names=set(),
+        )
+        from sabermetrics.pipeline.slot_assigner import SlotAssignment
+
+        engine_names = {a.card.get("name") for a in engine_reserved}
+        engine_reserved.extend(
+            SlotAssignment(card=c, slot_role=_heuristic_role(c), score=0.0)
+            for c in self._strategy_reserved
+            if c["name"] not in engine_names
         )
         budget_used = sum(
             float(a.card.get("price_usd", 0) or 0) for a in engine_reserved
@@ -421,6 +467,16 @@ class DeckBuilder:
         )
         self._trace_engine_snapshot("legality", all_assignments)
 
+        from sabermetrics.intelligence.alternatives import compare_mana_variants
+
+        t = time.time()
+        self._emit_progress("simulate")
+        all_assignments, simulation = compare_mana_variants(
+            all_assignments, commander.model_dump()
+        )
+        self._intelligence["simulation"] = simulation
+        metrics["simulate"] = time.time() - t
+
         # --- Stage 8: Synthesis + Classify + Persist ---
         self._validate_no_commander_in_99(all_assignments, commander)
         total_price = sum(
@@ -510,7 +566,57 @@ class DeckBuilder:
                 "Final deck validation failed: "
                 + "; ".join(item.message for item in acceptance.failures)
             )
+        from sabermetrics.intelligence.cards import semantic_findings
+        from sabermetrics.intelligence.strategy import assess_plan
+
+        plan = assess_plan(self._strategy_plan, [a.card for a in all_assignments])
+        findings = semantic_findings([a.card for a in all_assignments])
+        self._intelligence.update(
+            {
+                "version": "generation-intelligence.v1",
+                "plan": plan,
+                "findings": findings,
+                "decisions": plan["evidence"],
+            }
+        )
+        if plan["archetype"] == "landfall":
+            narrative.game_plan = (
+                "Develop lands, establish "
+                + commander.name
+                + ", then use repeated land entries to trigger the listed payoffs. "
+                + "The commander and selected cards cover "
+                + ", ".join(
+                    f"{r.replace('_',' ')} ({n})" for r, n in plan["counts"].items()
+                )
+                + "."
+            )
+            narrative.key_synergies = [
+                f"{e['card']}: {e['reason']}" for e in plan["evidence"][:10]
+            ]
+            narrative.weaknesses = (
+                ["Unmet strategy requirements: " + ", ".join(plan["missing"])]
+                if plan["missing"]
+                else []
+            )
+            narrative.weaknesses += [
+                "Opponent interaction and overall winning strength have not been simulated."
+            ]
+        if any(f["severity"] == "failure" for f in findings):
+            raise FatalError("Final deck contains unsupported card prerequisites")
         self._quality_warnings = acceptance.as_rationale_list()
+        if plan["archetype"] == "landfall":
+            self._quality_warnings = [
+                w for w in self._quality_warnings if w["code"] != "intent_unverified"
+            ]
+            if plan["missing"]:
+                self._quality_warnings.append(
+                    {
+                        "severity": "warning",
+                        "code": "strategy_partial",
+                        "message": "Landfall requirements remain unmet: "
+                        + ", ".join(plan["missing"]),
+                    }
+                )
         for item in acceptance.failures:
             assembly.warnings.append(f"[failure:{item.code}] {item.message}")
         for item in acceptance.warnings:
@@ -1001,6 +1107,7 @@ class DeckBuilder:
             for entry in section_entries:
                 auto_include_names.add(entry["name"])
         auto_include_names |= set(getattr(self, "_engine_protect_names", None) or ())
+        auto_include_names |= set(getattr(self, "_strategy_names", None) or ())
 
         # Group by primary role
         role_groups: dict[str, list[dict]] = {}
@@ -1508,6 +1615,7 @@ class DeckBuilder:
             return pool
 
         def _land_pool() -> list[dict]:
+            from sabermetrics.intelligence.cards import usable_land
             from sabermetrics.pipeline.greedy_optimizer import is_playable_as_land
 
             pool = []
@@ -1516,6 +1624,7 @@ class DeckBuilder:
                 if (
                     is_playable_as_land(type_line)
                     and "creature" not in type_line.lower()
+                    and usable_land(card, colors)
                 ):
                     pool.append(card)
             return pool
@@ -1542,12 +1651,22 @@ class DeckBuilder:
         # intersect table rows with this index and inherit its flags/scores.
         pool_index = {c.get("name", ""): c for c in candidates}
 
+        # Reserve at least 25% for lands and 20% for remaining strategy slots.
+        def role_budget(fraction: float) -> float:
+            return max(
+                0.0,
+                min(
+                    request.budget_usd * fraction,
+                    request.budget_usd * 0.55 - budget_used,
+                ),
+            )
+
         # 1. Ramp (first, so land generator knows what spells are in deck)
         ramp_gen = RampPackageGenerator(self.db_path)
         ramp = ramp_gen.generate(
             color_identity=colors,
             target_count=template.ramp_count,
-            budget_remaining=request.budget_usd - budget_used,
+            budget_remaining=role_budget(0.20),
             template=template,
             already_placed=placed_cards(),
             role_tag_pool=_pool_by_role("ramp"),
@@ -1567,7 +1686,7 @@ class DeckBuilder:
         draw = draw_gen.generate(
             color_identity=colors,
             target_count=template.draw_count,
-            budget_remaining=request.budget_usd - budget_used,
+            budget_remaining=role_budget(0.10),
             template=template,
             already_placed=placed_cards(),
             role_tag_pool=_pool_by_role("draw"),
@@ -1591,7 +1710,7 @@ class DeckBuilder:
         removal = removal_gen.generate(
             color_identity=colors,
             target_count=template.removal_count,
-            budget_remaining=request.budget_usd - budget_used,
+            budget_remaining=role_budget(0.15),
             template=template,
             already_placed=placed_cards(),
             role_tag_pool=deduped_removal,
@@ -1613,7 +1732,7 @@ class DeckBuilder:
         protection = prot_gen.generate(
             color_identity=colors,
             target_count=protection_target,
-            budget_remaining=request.budget_usd - budget_used,
+            budget_remaining=role_budget(0.10),
             template=template,
             already_placed=placed_cards(),
             role_tag_pool=protection_pool,
@@ -1707,6 +1826,33 @@ class DeckBuilder:
         # 1. Compute role targets
         role_targets = compute_role_targets(profile, template)
 
+        # Use feasible composition targets instead of letting independent
+        # hypergeometric wish lists demand seven wipes in every archetype.
+        for role, count in {
+            "ramp": template.ramp_count,
+            "draw": template.draw_count,
+            "removal": template.removal_count,
+            "board_wipe": template.board_wipe_count,
+        }.items():
+            target = role_targets[role]
+            target.target_count = count
+            target.min_count = max(0, count - 2)
+            target.max_count = count + 4
+
+        if (
+            getattr(self, "_strategy_plan", None)
+            and self._strategy_plan.archetype == "landfall"
+        ):
+            for role, count in {
+                "wincon": 3,
+                "tutor": 2,
+                "recursion": 2,
+                "protection": 3,
+            }.items():
+                role_targets[role].target_count = count
+                role_targets[role].min_count = max(0, count - 1)
+                role_targets[role].max_count = count + 2
+
         # 2. Build synergy matrix
         synergy = build_synergy_matrix(
             candidates,
@@ -1717,6 +1863,7 @@ class DeckBuilder:
         if hasattr(self, "_signals"):
             self._signals.update(synergy.signals)
 
+        self._emit_progress("assemble")
         # 3. Greedy fill: fill EVERY slot not yet placed, to reach exactly 99.
         # Deriving this from template.differentiator_slots (minus protection
         # and reservations) assumed every prior stage hit its target exactly.
@@ -1742,6 +1889,24 @@ class DeckBuilder:
         )
         all_assignments = list(infrastructure) + diff_assignments
 
+        from sabermetrics.intelligence.alternatives import choose_strategy_variant
+        from sabermetrics.intelligence.strategy import StrategyPlan
+
+        all_assignments, variants = choose_strategy_variant(
+            all_assignments,
+            infrastructure,
+            candidates,
+            synergy,
+            role_targets,
+            request.budget_usd,
+            getattr(self, "_strategy_plan", StrategyPlan()),
+            prof_signals,
+            template.type_targets,
+        )
+        if hasattr(self, "_intelligence"):
+            self._intelligence["strategy_comparisons"] = variants
+
+        self._emit_progress("refine")
         # 4. Swap refinement (infrastructure cards eligible for swap)
         protected = getattr(self, "_protected_names", None) or set()
         protected |= set(getattr(self, "_engine_protect_names", None) or ())
@@ -1813,7 +1978,7 @@ class DeckBuilder:
                 role_targets,
                 profile_result,
                 request,
-                n_weakest=99,  # full-deck review: every non-staple pick faces the gate
+                n_weakest=18,  # bounded risk review; explicit coverage is persisted
                 protected_names=protected,
             )
             if llm_cost < 0:
@@ -2090,7 +2255,7 @@ class DeckBuilder:
         n_weakest=8,
         protected_names: set[str] | None = None,
     ) -> tuple[list, float]:
-        """Score the riskiest picks via Haiku and swap out poor fits.
+        """Review risky picks and a bounded replacement menu in one model call.
 
         Args:
             deck: Current deck assignments.
@@ -2133,201 +2298,121 @@ class DeckBuilder:
         if not weakest:
             return deck, 0.0
 
-        profile_summary = self._build_profile_summary(profile_result)
-        total_cost = 0.0
-        self._review_consumed_cost = 0.0
+        from sabermetrics.intelligence.cards import facts_for
+        from sabermetrics.pipeline.greedy_optimizer import _count_roles
+        from sabermetrics.pipeline.quality import replacement_is_valid
+        from sabermetrics.reasoning.fit import FitScorer
 
-        try:
-            from sabermetrics.reasoning.fit import FitScorer
-
-            scorer = FitScorer(self.db_path)
-            weak_cards = [deck[i].card for i, _ in weakest]
-
-            try:
-                results = scorer.score_cards_batch(
-                    cards=weak_cards,
-                    profile_summary=profile_summary,
-                    archetype_definition=profile_result.profile.strategic_profile.primary_archetype,
-                    partial_deck=[a.card for a in deck],
-                    empirical_variant=getattr(self, "_empirical_variant", None),
-                )
-            finally:
-                self._review_consumed_cost += getattr(
-                    scorer, "last_batch_cost_usd", 0.0
-                )
-                if not getattr(scorer, "last_batch_complete", True):
-                    self._review_failed = True
-
-            # Replace cards scored <= 3 with next-best candidate
-            deck_names = {a.card.get("name", "") for a in deck}
-            corroboration_threshold = (
-                settings.scoring.safety_uncorroborated_max_inclusion
+        deck_names = {a.card.get("name", "") for a in deck}
+        menu = []
+        excluded = set(deck_names)
+        for _ in range(8):
+            candidate = self._best_replacement(
+                candidates,
+                excluded,
+                max_price=request.budget_usd,
+                corpus_active=corpus_active,
+                corroboration_threshold=settings.scoring.safety_uncorroborated_max_inclusion,
             )
-            # Names the vet rejects during THIS check. Removing a card from
-            # deck_names made it eligible again as a replacement for a
-            # different slot in the same pass -- Akroma was scored 3, swapped
-            # out, and immediately re-entered as the replacement for another
-            # round-2 failure. A rejection is final for the whole pass.
-            vetoed_names: set[str] = set()
-
-            def _replace_bad_fits(
-                scored,
-                stage: str,
-                corroborated_only: bool = False,
-            ) -> list[int]:
-                """Swap out picks the LLM scored <= 3; return swap-in indices."""
-                swapped_in: list[int] = []
-                for deck_idx, card, fit_response in scored:
-                    card["_fit_reasoning"] = fit_response.reasoning
-                    self._tracer.record(
-                        card_name=card.get("name", ""),
-                        stage=stage,
-                        action="considered",
-                        card_id=card.get("id"),
-                        score=float(fit_response.fit_score),
-                        reason=fit_response.reasoning,
-                        force=True,
-                    )
-                    if fit_response.fit_score > 3:
-                        continue
-                    budget_left = request.budget_usd - sum(
-                        float(a.card.get("price_usd", 0) or 0) for a in deck
-                    )
-                    old_price = float(card.get("price_usd", 0) or 0)
-                    replacement = self._best_replacement(
-                        candidates,
-                        deck_names | vetoed_names,
-                        max_price=old_price + max(0.0, budget_left),
-                        corpus_active=corpus_active,
-                        corroboration_threshold=corroboration_threshold,
-                        corroborated_only=corroborated_only,
-                    )
-                    if not replacement:
-                        continue
-                    from sabermetrics.pipeline.quality import replacement_is_valid
-
-                    colors = set()
-                    ca = getattr(
-                        getattr(profile_result, "profile", None),
-                        "card_analysis",
-                        None,
-                    )
-                    if ca is not None:
-                        colors = set(ca.color_identity or [])
-                    ok, why = replacement_is_valid(
-                        replacement,
-                        commander_colors=colors or None,
-                        deck_names=deck_names | vetoed_names,
-                        max_price=old_price + max(0.0, budget_left),
-                    )
-                    if not ok:
-                        self._tracer.record(
-                            card_name=replacement.get("name", ""),
-                            stage=stage,
-                            action="rejected",
-                            card_id=replacement.get("id"),
-                            reason=f"replacement failed validation: {why}",
-                            force=True,
-                        )
-                        continue
-                    old_name = card.get("name", "")
-                    vetoed_names.add(old_name)
-                    new_name = replacement.get("name", "")
-                    role = _heuristic_role(replacement)
-                    replacement["_fit_reasoning"] = (
-                        f"Replaced {old_name} (LLM score {fit_response.fit_score})"
-                    )
-                    deck[deck_idx] = SlotAssignment(
-                        card=replacement,
-                        slot_role=role,
-                        score=replacement.get("_cvar_score", 0.0),
-                        alternatives=[],
-                    )
-                    deck_names.discard(old_name)
-                    deck_names.add(new_name)
-                    self._tracer.record(
-                        card_name=old_name,
-                        stage=stage,
-                        action="swapped_out",
-                        card_id=card.get("id"),
-                        score=float(fit_response.fit_score),
-                        reason=f"LLM fit score {fit_response.fit_score} <= 3",
-                        force=True,
-                    )
-                    self._tracer.record(
-                        card_name=new_name,
-                        stage=stage,
-                        action="swapped_in",
-                        card_id=replacement.get("id"),
-                        score=replacement.get("_cvar_score", 0.0),
-                        reason=f"replaced {old_name} (LLM score {fit_response.fit_score})",
-                        force=True,
-                    )
-                    logger.info(
-                        "LLM safety (%s): replaced %s (score %d) with %s",
-                        stage,
-                        old_name,
-                        fit_response.fit_score,
-                        new_name,
-                    )
-                    swapped_in.append(deck_idx)
-                return swapped_in
-
-            scored = [
-                (deck_idx, card, fit_response)
-                for (deck_idx, _assignment), (card, fit_response) in zip(
-                    weakest, results
+            if candidate is None:
+                break
+            excluded.add(candidate.get("name", ""))
+            if not facts_for(candidate).exclusion:
+                menu.append(candidate)
+        to_review = [a.card for _, a in weakest] + menu
+        scorer = FitScorer(self.db_path)
+        self._review_consumed_cost = 0.0
+        try:
+            results = scorer.score_cards_batch(
+                cards=to_review,
+                profile_summary=self._build_profile_summary(profile_result),
+                archetype_definition=profile_result.profile.strategic_profile.primary_archetype,
+                partial_deck=[a.card for a in deck],
+                empirical_variant=getattr(self, "_empirical_variant", None),
+            )
+        finally:
+            self._review_consumed_cost += getattr(scorer, "last_batch_cost_usd", 0.0)
+            if not getattr(scorer, "last_batch_complete", True):
+                self._review_failed = True
+        # Bind verdicts by identity rather than assuming model response order.
+        verdicts = {c.get("id", c.get("name")): v for c, v in results}
+        passed = [
+            c
+            for c in menu
+            if c.get("id", c.get("name")) in verdicts
+            and verdicts[c.get("id", c.get("name"))].fit_score > 3
+        ]
+        if hasattr(self, "_intelligence"):
+            self._intelligence["review"] = {
+                "selected_reviewed": len(weakest),
+                "eligible_selected": len(indexed),
+                "alternatives_reviewed": len(menu),
+                "max_model_calls": 1,
+                "scope": "Bounded risk review, not exhaustive card review.",
+            }
+        ca = getattr(getattr(profile_result, "profile", None), "card_analysis", None)
+        colors = set(ca.color_identity or []) if ca is not None else None
+        for index, assignment in weakest:
+            old = assignment.card
+            verdict = verdicts.get(old.get("id", old.get("name")))
+            if verdict is None:
+                self._review_failed = True
+                continue
+            old["_fit_reasoning"] = verdict.reasoning
+            if verdict.fit_score > 3:
+                continue
+            price = sum(float(a.card.get("price_usd", 0) or 0) for a in deck)
+            baseline_counts = _count_roles(deck)
+            replaced = False
+            for replacement in passed:
+                allowed, _ = replacement_is_valid(
+                    replacement,
+                    commander_colors=colors,
+                    deck_names=deck_names,
+                    max_price=request.budget_usd
+                    - price
+                    + float(old.get("price_usd", 0) or 0),
                 )
-            ]
-            swap_in_idxs = _replace_bad_fits(scored, "llm_safety")
-
-            # Re-vet round: the replacements above entered unreviewed (the
-            # pipeline's last unvetted door -- Eiganjo Dynastorian came
-            # through it in two consecutive builds). One more small batched
-            # call over just the swap-ins; their own replacements are
-            # corroboration-ranked and accepted without a third round.
-            if swap_in_idxs:
-                try:
-                    revet_results = scorer.score_cards_batch(
-                        cards=[deck[i].card for i in swap_in_idxs],
-                        profile_summary=profile_summary,
-                        archetype_definition=profile_result.profile.strategic_profile.primary_archetype,
-                        partial_deck=[a.card for a in deck],
-                        empirical_variant=getattr(self, "_empirical_variant", None),
-                    )
-                finally:
-                    self._review_consumed_cost += getattr(
-                        scorer, "last_batch_cost_usd", 0.0
-                    )
-                    if not getattr(scorer, "last_batch_complete", True):
-                        self._review_failed = True
-                revet_scored = [
-                    (deck_idx, card, fit_response)
-                    for deck_idx, (card, fit_response) in zip(
-                        swap_in_idxs, revet_results
-                    )
-                ]
-                # Round-2 replacements are accepted without further review,
-                # so they are restricted to corpus-corroborated cards: an
-                # unreviewed slot never gets an unreviewed text-matcher.
-                second_round = _replace_bad_fits(
-                    revet_scored,
-                    "llm_safety_revet",
-                    corroborated_only=True,
+                if not allowed:
+                    continue
+                proposed = SlotAssignment(
+                    card=replacement,
+                    slot_role=_heuristic_role(replacement),
+                    score=replacement.get("_cvar_score", 0),
                 )
-                if second_round:
-                    logger.info(
-                        "LLM safety re-vet: %d second-round replacements "
-                        "(accepted without further review)",
-                        len(second_round),
-                    )
-
-        except Exception as e:
-            logger.warning("LLM safety net scoring failed (%s)", type(e).__name__)
-            raise
-
-        total_cost = self._review_consumed_cost
-        return deck, total_cost
+                trial = list(deck)
+                trial[index] = proposed
+                counts = _count_roles(trial)
+                if role_targets and any(
+                    counts.get(r, 0) < min(baseline_counts.get(r, 0), t.min_count)
+                    for r, t in role_targets.items()
+                ):
+                    continue
+                replacement["_fit_reasoning"] = verdicts[
+                    replacement.get("id", replacement.get("name"))
+                ].reasoning
+                deck[index] = proposed
+                deck_names.discard(old.get("name", ""))
+                deck_names.add(replacement.get("name", ""))
+                self._tracer.record(
+                    card_name=replacement.get("name", ""),
+                    stage="llm_safety",
+                    action="swapped_in",
+                    reason="Independently reviewed alternative; budget and role floors preserved.",
+                    force=True,
+                )
+                replaced = True
+                break
+            if not replaced:
+                self._review_failed = True
+                self._tracer.record(
+                    card_name=old.get("name", ""),
+                    stage="llm_safety",
+                    action="flagged",
+                    reason="No reviewed replacement satisfies final constraints.",
+                    force=True,
+                )
+        return deck, self._review_consumed_cost
 
     def _build_profile_summary(self, profile_result) -> str:
         """Build the profile summary string for LLM fit scoring."""
@@ -2693,13 +2778,6 @@ class DeckBuilder:
 
         # Composition stats
         from sabermetrics.analytics.brackets import _detect_combos
-        from sabermetrics.analytics.components import (
-            count_board_wipes,
-            count_card_draw,
-            count_ramp_spells,
-            count_removal,
-            count_tutors,
-        )
 
         all_card_dicts = [a.card for a in assembly.assignments]
 
@@ -2756,6 +2834,9 @@ class DeckBuilder:
         combos = _detect_combos(all_card_dicts, self.db_path)
         combo_ids = [c["id"] for c in combos]
 
+        from sabermetrics.pipeline.greedy_optimizer import _count_roles
+
+        role_counts = _count_roles(assembly.assignments)
         composition = DeckComposition(
             total_price_usd=assembly.total_price,
             average_cmc=round(avg_cmc, 2),
@@ -2763,14 +2844,12 @@ class DeckBuilder:
             type_distribution=type_dist,
             mana_curve=mana_curve,
             component_counts=ComponentCounts(
-                ramp=count_ramp_spells(non_lands),
-                draw=count_card_draw(non_lands),
-                removal=count_removal(non_lands),
-                board_wipes=count_board_wipes(non_lands),
-                tutors=count_tutors(non_lands),
-                win_conditions=sum(
-                    1 for a in assembly.assignments if a.slot_role == "wincon"
-                ),
+                ramp=role_counts.get("ramp", 0),
+                draw=role_counts.get("draw", 0),
+                removal=role_counts.get("removal", 0),
+                board_wipes=role_counts.get("board_wipe", 0),
+                tutors=role_counts.get("tutor", 0),
+                win_conditions=role_counts.get("wincon", 0),
             ),
             game_changers_present=gc_names,
             detected_combos=combo_ids,
@@ -2834,6 +2913,7 @@ class DeckBuilder:
                     "stage_timings": dict(getattr(self, "_stage_timings", {})),
                     "stage_counts": dict(getattr(self, "_stage_counts", {})),
                     "engine": getattr(self, "_engine_rationale", None),
+                    "intelligence": getattr(self, "_intelligence", {}),
                 }
             )
 
@@ -2957,4 +3037,10 @@ def _heuristic_role(card: dict) -> str:
     """Classify card role by heuristics when LLM is unavailable."""
     from sabermetrics.pipeline.slot_assigner import _classify_card_role
 
+    if "_facts" in card:
+        roles = card["_facts"]["roles"]
+        for role in ("land", "ramp", "draw", "removal", "protection", "wincon"):
+            if role in roles:
+                return role
+        return "utility"
     return _classify_card_role(card)

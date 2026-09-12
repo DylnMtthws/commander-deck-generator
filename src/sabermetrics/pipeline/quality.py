@@ -217,7 +217,7 @@ def evaluate_final_deck(
                 severity="warning",
                 code="failed_final_review",
                 message=(
-                    "The final card review could not finish. Review the selected cards before playing."
+                    "The bounded card review left unresolved selections or incomplete verdicts. Review the flagged choices before playing."
                 ),
             )
         )
