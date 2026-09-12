@@ -12,11 +12,8 @@ def test_settings_load_from_yaml() -> None:
 
     assert settings.user.default_budget_usd == 200
     assert settings.user.default_power_target == 3
-    assert settings.llm.profile_model == "claude-sonnet-4-6"
-    # Sonnet for the vet: Haiku miscalibrated borderline judgment calls
-    # (Gravebreaker Lamia 4/10, Lost Auramancers 6/10), and the batched
-    # single-call shape makes Sonnet cheaper than per-card Haiku was.
-    assert settings.llm.fit_model == "claude-sonnet-4-6"
+    assert settings.llm.profile_model == "deepseek-flash"
+    assert settings.llm.fit_model == "deepseek-flash"
     assert settings.llm.monthly_cost_ceiling_usd == 15.0
     assert settings.pipeline.hard_filter_target == 3000
     assert settings.output.deck_format == "json"

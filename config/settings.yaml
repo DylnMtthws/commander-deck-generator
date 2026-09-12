@@ -13,10 +13,13 @@ user:
     price_efficiency: 0.0
 
 llm:
-  profile_model: "claude-sonnet-4-6"
-  fit_model: "claude-sonnet-4-6"
-  synthesis_model: "claude-sonnet-4-6"
-  refresh_model: "claude-haiku-4-5"
+  profile_model: "deepseek-flash"
+  fit_model: "deepseek-flash"
+  synthesis_model: "deepseek-flash"
+  refresh_model: "deepseek-flash"
+  template_model: "deepseek-flash"
+  # Peak USD per million tokens; conservative at off-peak times (2026-09-12).
+  deepseek_pricing: {input: 0.30, cached_input: 0.006, output: 1.20}
   max_candidates_for_llm_fit: 50
   prompt_caching: true
   monthly_cost_ceiling_usd: 15.0

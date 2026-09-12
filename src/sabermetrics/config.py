@@ -25,14 +25,23 @@ class UserSettings(BaseModel):
     )
 
 
+class ModelPricing(BaseModel):
+    """Conservative USD-per-million estimates; update when provider rates change."""
+
+    input: float = Field(default=0.30, ge=0)
+    cached_input: float = Field(default=0.006, ge=0)
+    output: float = Field(default=1.20, ge=0)
+
+
 class LLMSettings(BaseModel):
     """LLM model and cost settings."""
 
-    profile_model: str = "claude-sonnet-4-6"
-    fit_model: str = "claude-sonnet-4-6"
-    synthesis_model: str = "claude-sonnet-4-6"
-    refresh_model: str = "claude-haiku-4-5"
-    template_model: str = "claude-haiku-4-5"
+    profile_model: str = "deepseek-flash"
+    fit_model: str = "deepseek-flash"
+    synthesis_model: str = "deepseek-flash"
+    refresh_model: str = "deepseek-flash"
+    template_model: str = "deepseek-flash"
+    deepseek_pricing: ModelPricing = Field(default_factory=ModelPricing)
     max_candidates_for_llm_fit: int = 50
     prompt_caching: bool = True
     monthly_cost_ceiling_usd: float = 5.0

@@ -1,11 +1,7 @@
-"""Anthropic API client wrapper (D5.1).
+"""DeepSeek transport with bounded retries, token accounting and a spend ceiling.
 
-Singleton wrapper for all LLM calls. Handles:
-- Prompt caching with cache_breakpoints
-- Cost tracking to cost_log table
-- Monthly cost ceiling enforcement
-- Exponential backoff retry
-- Model name validation
+All generation calls use this boundary. The historical AnthropicClient name is
+an import alias for old callers; no requests are sent to Anthropic.
 """
 
 import contextvars
@@ -17,138 +13,59 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-import anthropic
+import httpx
 from pydantic import BaseModel
 
-from sabermetrics.errors import (
-    FatalError,
-    LLMCostCeilingExceeded,
-    RecoverableError,
-)
+from sabermetrics.errors import FatalError, LLMCostCeilingExceeded, RecoverableError
 
 logger = logging.getLogger(__name__)
-
-# Cost attribution: DeckBuilder sets this around a generation so every LLM call
-# logged during it is tagged with the owning user + deck. Unset => unattributed
-# (e.g. CLI builds, background refreshes). A ContextVar keeps this correct even
-# if generations ever run concurrently.
 _cost_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "saber_cost_context", default=None
 )
 
 
 @contextmanager
-def cost_attribution(
-    user_id: str | None, deck_id: str | None
-) -> Iterator[None]:
-    """Attribute cost_log rows written in this scope to a user + deck."""
+def cost_attribution(user_id: str | None, deck_id: str | None) -> Iterator[None]:
     token = _cost_context.set({"user_id": user_id, "deck_id": deck_id})
     try:
         yield
     finally:
         _cost_context.reset(token)
 
-# ADR-011: allowed models. All three are current, active model IDs (verified
-# against the Anthropic model catalog). Keep this set in sync with the models
-# referenced in config/settings.yaml — validate_configured_models() enforces it.
-ALLOWED_MODELS = {
-    "claude-haiku-4-5",
-    "claude-sonnet-4-6",
-    "claude-opus-4-6",
-}
 
-# Model IDs that have been retired and will 404. Presence of any of these in
-# ALLOWED_MODELS or config is a hard error — this is the "fail loud when a model
-# goes stale" guard.
-KNOWN_RETIRED_MODELS = {
-    "claude-3-7-sonnet-20250219",
-    "claude-3-5-haiku-20241022",
-    "claude-3-opus-20240229",
-    "claude-3-5-sonnet-20241022",
-    "claude-3-5-sonnet-20240620",
-    "claude-3-sonnet-20240229",
-    "claude-2.1",
-    "claude-2.0",
-}
-
-# Pricing per 1M tokens. Verified against the Anthropic model catalog:
-#   Haiku 4.5  = $1.00 in / $5.00 out   (cached input ~0.1x)
-#   Sonnet 4.6 = $3.00 in / $15.00 out
-#   Opus 4.6   = $5.00 in / $25.00 out
-# Cached-input rate is ~0.1x the input rate for every current model.
+ALLOWED_MODELS = {"deepseek-flash"}
+KNOWN_RETIRED_MODELS = {"deepseek-v4-flash", "claude-3-opus-20240229"}
+# Peak-rate estimates, deliberately conservative during off-peak hours.
+# Source: https://api-docs.deepseek.com/quick_start/pricing/ (2026-09-12).
 MODEL_PRICING = {
-    "claude-haiku-4-5": {
-        "input": 1.00,
-        "cached_input": 0.10,
-        "output": 5.00,
-    },
-    "claude-sonnet-4-6": {
-        "input": 3.00,
-        "cached_input": 0.30,
-        "output": 15.00,
-    },
-    "claude-opus-4-6": {
-        "input": 5.00,
-        "cached_input": 0.50,
-        "output": 25.00,
-    },
+    "deepseek-flash": {"input": 0.30, "cached_input": 0.006, "output": 1.20}
 }
 
 
 def validate_models() -> None:
-    """Validate the static model tables at import/boot time.
-
-    Guarantees that every allowed model has a pricing entry and that no allowed
-    model is a known-retired ID. Raises FatalError on any inconsistency so a
-    stale table fails loud rather than silently mis-pricing or 404-ing later.
-
-    Raises:
-        FatalError: If ALLOWED_MODELS and MODEL_PRICING are inconsistent, or an
-            allowed model is retired.
-    """
-    missing_pricing = ALLOWED_MODELS - set(MODEL_PRICING)
-    if missing_pricing:
-        raise FatalError(
-            f"Allowed models missing from MODEL_PRICING: {sorted(missing_pricing)}"
-        )
-    retired = ALLOWED_MODELS & KNOWN_RETIRED_MODELS
-    if retired:
-        raise FatalError(
-            f"Allowed models are retired (will 404): {sorted(retired)}"
-        )
+    if (
+        not ALLOWED_MODELS <= MODEL_PRICING.keys()
+        or ALLOWED_MODELS & KNOWN_RETIRED_MODELS
+    ):
+        raise FatalError("Model allowlist and pricing are inconsistent")
 
 
 def validate_configured_models(configured: dict[str, str]) -> None:
-    """Validate that every model named in config is usable.
-
-    Args:
-        configured: Mapping of setting name -> model ID (e.g. from LLMSettings).
-
-    Raises:
-        FatalError: If any configured model is not in ALLOWED_MODELS or is a
-            known-retired ID.
-    """
-    for setting_name, model in configured.items():
+    for setting, model in configured.items():
         if model in KNOWN_RETIRED_MODELS:
             raise FatalError(
-                f"Configured model '{model}' (llm.{setting_name}) is retired "
-                f"and will 404. Update config/settings.yaml."
+                f"Configured model '{model}' is retired; use deepseek-flash"
             )
         if model not in ALLOWED_MODELS:
             raise FatalError(
-                f"Configured model '{model}' (llm.{setting_name}) is not in "
-                f"ALLOWED_MODELS {sorted(ALLOWED_MODELS)}. Add it (with pricing) "
-                f"or fix config/settings.yaml."
+                f"Configured model '{model}' ({setting}) is not in ALLOWED_MODELS"
             )
 
 
-# Validate the static model tables at import time (pure, no API key required).
 validate_models()
 
 
 class CallResult(BaseModel):
-    """Result of an Anthropic API call."""
-
     content: str
     model: str
     input_tokens: int
@@ -158,49 +75,50 @@ class CallResult(BaseModel):
     request_id: str
 
 
-class AnthropicClient:
-    """Singleton wrapper for Anthropic API. All LLM calls MUST go through this.
+class ModelClient:
+    """One configured client per database; provider secrets never enter logs."""
 
-    Usage:
-        client = AnthropicClient.get_instance(db_path)
-        result = client.call_with_cache(model="claude-haiku-4-5", ...)
-    """
-
-    _instance: "AnthropicClient | None" = None
+    _instance: "ModelClient | None" = None
 
     def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
-        # Fail loud at construction if the model tables or configured models
-        # are inconsistent, rather than 404-ing on the first real API call.
-        validate_models()
         from sabermetrics.config import settings
 
-        validate_configured_models({
-            "profile_model": settings.llm.profile_model,
-            "fit_model": settings.llm.fit_model,
-            "synthesis_model": settings.llm.synthesis_model,
-            "refresh_model": settings.llm.refresh_model,
-            "template_model": settings.llm.template_model,
-        })
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            raise FatalError(
-                "ANTHROPIC_API_KEY not set. Export it or add to .env"
-            )
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self.db_path = Path(db_path)
+        validate_configured_models(
+            {
+                key: getattr(settings.llm, key)
+                for key in (
+                    "profile_model",
+                    "fit_model",
+                    "synthesis_model",
+                    "refresh_model",
+                    "template_model",
+                )
+            }
+        )
+        key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        if not key:
+            raise FatalError("DEEPSEEK_API_KEY is not configured")
+        # A fixed origin prevents accidentally sending this credential to a router.
+        self._client = httpx.Client(
+            base_url="https://api.deepseek.com",
+            timeout=httpx.Timeout(180, connect=15),
+            headers={"Authorization": "Bearer " + key},
+            follow_redirects=False,
+        )
 
     @classmethod
-    def get_instance(cls, db_path: Path | None = None) -> "AnthropicClient":
-        """Get or create the singleton client instance."""
-        if cls._instance is None:
-            if db_path is None:
-                db_path = Path("data/sabermetrics.db")
-            cls._instance = cls(db_path)
+    def get_instance(cls, db_path: Path | None = None) -> "ModelClient":
+        path = Path(db_path or "data/sabermetrics.db")
+        if cls._instance is None or cls._instance.db_path.resolve() != path.resolve():
+            cls.reset_instance()
+            cls._instance = cls(path)
         return cls._instance
 
     @classmethod
     def reset_instance(cls) -> None:
-        """Reset the singleton (for testing)."""
+        if cls._instance is not None:
+            cls._instance._client.close()
         cls._instance = None
 
     def call_with_cache(
@@ -213,153 +131,98 @@ class AnthropicClient:
         temperature: float = 0.0,
         call_type: str = "unknown",
     ) -> CallResult:
-        """Make an Anthropic API call with prompt caching.
+        """Return final answer text; existing callers validate their own schemas.
 
-        Args:
-            model: Model name (must be in ALLOWED_MODELS).
-            system: System prompt.
-            messages: List of message dicts with 'role' and 'content'.
-            cache_breakpoints: Indices of messages to mark as cacheable.
-            max_tokens: Maximum output tokens.
-            temperature: Sampling temperature.
-            call_type: Label for cost tracking (e.g. 'profile', 'fit').
-
-        Returns:
-            CallResult with response content and metadata.
-
-        Raises:
-            FatalError: Cost ceiling exceeded or invalid model.
-            RecoverableError: Transient API failure after retries.
+        DeepSeek caches matching prefixes automatically. Anthropic cache markers
+        are removed without mutating the caller's messages. Non-thinking mode
+        preserves the existing small completion budgets and bounds token spend.
         """
-        if model not in ALLOWED_MODELS:
-            raise FatalError(f"Model '{model}' not in allowed models: {ALLOWED_MODELS}")
-
-        # Check cost ceiling
         from sabermetrics.config import settings
-        monthly_ceiling = settings.llm.monthly_cost_ceiling_usd
-        current_spend = self.get_monthly_spend()
-        if current_spend >= monthly_ceiling:
-            raise LLMCostCeilingExceeded(
-                f"Monthly spend ${current_spend:.2f} exceeds "
-                f"ceiling ${monthly_ceiling:.2f}"
-            )
 
-        # Build system prompt with cache control
-        system_content = [
-            {
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ]
-
-        # Build messages with cache breakpoints
-        api_messages = []
-        for i, msg in enumerate(messages):
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                content_blocks = [{"type": "text", "text": content}]
-            else:
-                content_blocks = content
-
-            # Add cache control at breakpoints
-            if cache_breakpoints and i in cache_breakpoints:
-                if content_blocks:
-                    content_blocks[-1]["cache_control"] = {"type": "ephemeral"}
-
-            api_messages.append({
-                "role": msg.get("role", "user"),
-                "content": content_blocks,
-            })
-
-        # Retry with exponential backoff
-        last_error = None
-        for attempt in range(3):
-            try:
-                response = self._client.messages.create(
-                    model=model,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    system=system_content,
-                    messages=api_messages,
-                )
-
-                # Extract usage
-                usage = response.usage
-                input_tokens = usage.input_tokens
-                output_tokens = usage.output_tokens
-                cached_input = getattr(
-                    usage, "cache_read_input_tokens", 0
-                ) or 0
-
-                # Compute cost
-                cost = self.estimate_cost(
-                    model, input_tokens, cached_input, output_tokens
-                )
-
-                # Extract content text
-                content_text = ""
-                for block in response.content:
-                    if hasattr(block, "text"):
-                        content_text += block.text
-
-                request_id = response.id or ""
-
-                result = CallResult(
-                    content=content_text,
-                    model=model,
-                    input_tokens=input_tokens,
-                    cached_input_tokens=cached_input,
-                    output_tokens=output_tokens,
-                    cost_usd=cost,
-                    request_id=request_id,
-                )
-
-                # Log cost
-                self._log_cost(result, call_type)
-
-                logger.info(
-                    "API call: model=%s type=%s input=%d cached=%d "
-                    "output=%d cost=$%.4f",
-                    model, call_type, input_tokens, cached_input,
-                    output_tokens, cost,
-                )
-
-                return result
-
-            except anthropic.RateLimitError as e:
-                last_error = e
-                wait = 2 ** attempt * 2
-                logger.warning(
-                    "Rate limited (attempt %d/3), waiting %ds: %s",
-                    attempt + 1, wait, e,
-                )
-                time.sleep(wait)
-
-            except anthropic.APIConnectionError as e:
-                last_error = e
-                wait = 2 ** attempt * 2
-                logger.warning(
-                    "Connection error (attempt %d/3), waiting %ds: %s",
-                    attempt + 1, wait, e,
-                )
-                time.sleep(wait)
-
-            except anthropic.APIStatusError as e:
-                if e.status_code >= 500:
-                    last_error = e
-                    wait = 2 ** attempt * 2
-                    logger.warning(
-                        "Server error %d (attempt %d/3), waiting %ds",
-                        e.status_code, attempt + 1, wait,
+        validate_configured_models({"request": model})
+        api_messages = [{"role": "system", "content": system}]
+        for message in messages:
+            content = message.get("content", "")
+            if isinstance(content, list):
+                if any(block.get("type") != "text" for block in content):
+                    raise FatalError(
+                        "Generator model requests support text content only"
                     )
-                    time.sleep(wait)
-                else:
-                    raise FatalError(f"API error: {e}") from e
-
-        raise RecoverableError(
-            f"API call failed after 3 retries: {last_error}"
+                content = "\n".join(block["text"] for block in content)
+            api_messages.append(
+                {"role": message.get("role", "user"), "content": content}
+            )
+        payload = {
+            "model": model,
+            "messages": api_messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "thinking": {"type": "disabled"},
+        }
+        for attempt in range(3):
+            if self.get_monthly_spend() >= settings.llm.monthly_cost_ceiling_usd:
+                raise LLMCostCeilingExceeded("Monthly model spend ceiling reached")
+            try:
+                response = self._client.post("/chat/completions", json=payload)
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                code = exc.response.status_code
+                if code != 429 and code < 500:
+                    raise FatalError(
+                        f"DeepSeek API rejected the request (HTTP {code})"
+                    ) from None
+            except httpx.TransportError:
+                pass
+            else:
+                break
+            if attempt == 2:
+                raise RecoverableError("DeepSeek request failed after three attempts")
+            time.sleep(2 ** (attempt + 1))
+        try:
+            body = response.json()
+            usage = body["usage"]
+            total_input = usage["prompt_tokens"]
+            cached = usage.get(
+                "prompt_cache_hit_tokens",
+                usage.get("prompt_tokens_details", {}).get("cached_tokens", 0),
+            )
+            output = usage["completion_tokens"]  # includes any billed reasoning tokens
+            if (
+                any(type(n) is not int or n < 0 for n in (total_input, cached, output))
+                or cached > total_input
+            ):
+                raise ValueError("Invalid usage counters")
+            choice = body["choices"][0]
+            content = choice["message"].get("content")
+            result = CallResult(
+                content=content if isinstance(content, str) else "",
+                model=model,
+                input_tokens=total_input,
+                cached_input_tokens=cached,
+                output_tokens=output,
+                cost_usd=self.estimate_cost(model, total_input, cached, output),
+                request_id=body.get("id", ""),
+            )
+        except (ValueError, KeyError, IndexError, TypeError):
+            raise FatalError(
+                "DeepSeek returned a malformed response or usage record"
+            ) from None
+        # Even a truncated/empty answer consumed tokens. Record it before rejection.
+        self._log_cost(result, call_type)
+        if choice.get("finish_reason") != "stop" or not result.content.strip():
+            raise RecoverableError(
+                "DeepSeek returned an incomplete answer; usage was recorded"
+            )
+        logger.info(
+            "Model call: model=%s type=%s input=%d cached=%d output=%d estimated_cost=$%.6f",
+            model,
+            call_type,
+            total_input,
+            cached,
+            output,
+            result.cost_usd,
         )
+        return result
 
     def estimate_cost(
         self,
@@ -368,16 +231,19 @@ class AnthropicClient:
         cached_input_tokens: int,
         output_tokens: int,
     ) -> float:
-        """Compute cost in USD given token counts."""
-        pricing = MODEL_PRICING.get(model, MODEL_PRICING["claude-haiku-4-5"])
+        validate_configured_models({"pricing": model})
+        from sabermetrics.config import settings
 
-        uncached_input = input_tokens - cached_input_tokens
-        cost = (
-            uncached_input * pricing["input"] / 1_000_000
-            + cached_input_tokens * pricing["cached_input"] / 1_000_000
-            + output_tokens * pricing["output"] / 1_000_000
+        pricing = settings.llm.deepseek_pricing
+        return round(
+            (
+                (input_tokens - cached_input_tokens) * pricing.input
+                + cached_input_tokens * pricing.cached_input
+                + output_tokens * pricing.output
+            )
+            / 1_000_000,
+            8,
         )
-        return round(cost, 6)
 
     def get_monthly_spend(self) -> float:
         """Query cost_log for spend in last 30 days."""
@@ -416,3 +282,7 @@ class AnthropicClient:
             conn.commit()
         finally:
             conn.close()
+
+
+# Compatibility for the original pipeline and third-party imports.
+AnthropicClient = ModelClient

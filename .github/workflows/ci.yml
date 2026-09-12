@@ -43,7 +43,7 @@ jobs:
           # It is set anyway as a guard -- a dummy value means a test that ever
           # does reach for the API fails loudly on a bad key instead of
           # depending on whatever happens to be in the runner's environment.
-          ANTHROPIC_API_KEY: dummy-key-not-used-by-tests
+          DEEPSEEK_API_KEY: dummy-key-not-used-by-tests
         run: pytest -q
 
   container:
@@ -55,3 +55,19 @@ jobs:
         run: docker build --build-arg SABER_BUILD_SHA=${{ github.sha }} -t commander-generator-ci .
       - name: Verify installed app and owner access without network
         run: docker run --rm -i --network none --read-only --tmpfs /data:rw,uid=1001,gid=1001 --tmpfs /tmp:rw,mode=1777 commander-generator-ci python - < scripts/smoke_container.py
+      - name: Package tested main image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p release
+          docker save commander-generator-ci | gzip -1 > release/image.tar.gz
+          docker image inspect commander-generator-ci > release/image.json
+          cd release
+          sha256sum image.tar.gz > SHA256SUMS
+      - name: Retain exact release image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: generator-${{ github.sha }}-${{ github.run_attempt }}
+          path: release/
+          retention-days: 7
+          compression-level: 0
