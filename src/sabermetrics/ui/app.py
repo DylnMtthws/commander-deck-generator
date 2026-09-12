@@ -43,6 +43,9 @@ def create_app(db_path: Path | None = None) -> Flask:
     if db_path is None:
         db_path = Path("data/sabermetrics.db")
     app.config["DB_PATH"] = db_path
+    app.config["OWNER_EMAIL"] = (
+        os.environ.get("SABER_OWNER_EMAIL", "").strip().casefold()
+    )
 
     # --- Secret key: required for signed session cookies + CSRF ---
     secret = os.environ.get("SABER_SECRET_KEY")
@@ -58,6 +61,7 @@ def create_app(db_path: Path | None = None) -> Flask:
     # Secure defaults to on (the app is fronted by HTTPS via the tunnel). For
     # local http previews, set SABER_COOKIE_SECURE=0 so the cookie is sent.
     app.config.update(
+        SESSION_COOKIE_NAME="generator_session",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=_env_bool("SABER_COOKIE_SECURE", True),
@@ -85,11 +89,24 @@ def create_app(db_path: Path | None = None) -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(main_bp)
 
+    @app.get("/healthz")
+    def health():
+        from sabermetrics import db
+
+        with db.connect(db_path) as conn:
+            conn.execute("SELECT 1 FROM cards LIMIT 1").fetchone()
+        return {
+            "status": "ok",
+            "build_sha": os.environ.get("SABER_BUILD_SHA", "unknown"),
+        }
+
     logger.info("Flask app created, DB: %s", db_path)
     return app
 
 
-def run_server(host: str = "127.0.0.1", port: int = 5000, db_path: Path | None = None) -> None:
+def run_server(
+    host: str = "127.0.0.1", port: int = 5000, db_path: Path | None = None
+) -> None:
     """Start the UI server via waitress (production WSGI, macOS-friendly).
 
     The app always binds to 127.0.0.1; public access is via the Cloudflare

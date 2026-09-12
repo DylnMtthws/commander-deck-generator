@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sabermetrics"
+name = "commander-deck-generator"
 version = "0.1.0"
 description = "Sabermetrics for Magic — Commander/EDH deck optimization using LLM-driven reasoning"
 requires-python = ">=3.11"
@@ -48,6 +48,7 @@ sabermetrics = "sabermetrics.main:cli"
 where = ["src"]
 
 [tool.black]
+target-version = ["py311"]
 line-length = 88
 
 [tool.ruff]
@@ -68,3 +69,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.setuptools.package-data]
+sabermetrics = ["ui/templates/**/*.html", "ui/static/*"]

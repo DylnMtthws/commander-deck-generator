@@ -49,6 +49,12 @@ def _require_admin():
         return login_manager.unauthorized()
     if not getattr(current_user, "is_admin", False):
         abort(403)
+    if (
+        current_app.config.get("OWNER_EMAIL")
+        and request.method == "POST"
+        and request.path.startswith("/admin/users/")
+    ):
+        abort(403)
     return None
 
 
@@ -225,7 +231,15 @@ def feedback_export():
         )
 
     buf = io.StringIO()
-    fields = ["user", "deck_id", "commander", "card_name", "vote", "comment", "updated_at"]
+    fields = [
+        "user",
+        "deck_id",
+        "commander",
+        "card_name",
+        "vote",
+        "comment",
+        "updated_at",
+    ]
     writer = csv.DictWriter(buf, fieldnames=fields)
     writer.writeheader()
     for row in card_rows:

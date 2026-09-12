@@ -1,0 +1,9 @@
+*
+!pyproject.toml
+!src/
+!src/**
+!config/
+!config/**
+!scripts/
+!scripts/setup_db.py
+**/__pycache__

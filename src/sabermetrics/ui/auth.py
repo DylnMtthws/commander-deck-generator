@@ -57,13 +57,13 @@ class AuthUser(UserMixin):
     def __init__(self, row: dict[str, Any]) -> None:
         self._row = row
 
-    def get_id(self) -> str:  # noqa: D102 (Flask-Login contract)
+    def get_id(self) -> str:
         return str(self._row["id"])
 
     @property
     def is_active(self) -> bool:
         """Disabled/invited accounts cannot hold a session."""
-        return self._row.get("status") == "active"
+        return account_allowed(self._row)
 
     @property
     def id(self) -> str:
@@ -103,11 +103,22 @@ def _invites() -> db.InviteRepo:
     return db.InviteRepo(current_app.config["DB_PATH"])
 
 
+def account_allowed(row: dict[str, Any]) -> bool:
+    """Enforce the hosted owner's identity on login and every session reload."""
+    if row.get("status") != "active":
+        return False
+    owner = current_app.config.get("OWNER_EMAIL", "")
+    return not owner or (
+        row.get("role") == "admin"
+        and (row.get("email") or "").strip().casefold() == owner
+    )
+
+
 @login_manager.user_loader
 def load_user(user_id: str) -> AuthUser | None:
     """Reload a user from its id for each request."""
     row = _users().get(user_id)
-    return AuthUser(row) if row else None
+    return AuthUser(row) if row and account_allowed(row) else None
 
 
 @login_manager.unauthorized_handler
@@ -145,14 +156,19 @@ class LoginForm(FlaskForm):
 
 
 class InviteAcceptForm(FlaskForm):
-    display_name = StringField("Display name", validators=[DataRequired(), Length(max=80)])
+    display_name = StringField(
+        "Display name", validators=[DataRequired(), Length(max=80)]
+    )
     avatar_emoji = StringField("Avatar emoji", validators=[Length(max=8)])
     password = PasswordField(
         "Password", validators=[DataRequired(), Length(min=8, max=200)]
     )
     confirm = PasswordField(
         "Confirm password",
-        validators=[DataRequired(), EqualTo("password", message="Passwords must match")],
+        validators=[
+            DataRequired(),
+            EqualTo("password", message="Passwords must match"),
+        ],
     )
 
 
@@ -179,12 +195,13 @@ def login():
     form = LoginForm()
     if form.validate_on_submit():
         row = _users().get_by_email(form.email.data.strip())
-        if (
-            row is not None
-            and db.verify_password(row.get("password_hash"), form.password.data)
+        if row is not None and db.verify_password(
+            row.get("password_hash"), form.password.data
         ):
-            if row.get("status") != "active":
-                flash("This account is not active. Ask the admin for an invite.", "error")
+            if not account_allowed(row):
+                flash(
+                    "This account is not active. Ask the admin for an invite.", "error"
+                )
             else:
                 _users().touch_login(row["id"])
                 login_user(AuthUser(row))
@@ -209,6 +226,9 @@ def accept_invite(token: str):
     """Accept an invite: set a password + profile, then sign in."""
     if current_user.is_authenticated:
         return redirect(url_for("main.index"))
+
+    if current_app.config.get("OWNER_EMAIL"):
+        abort(403)
 
     invite = _invites().get_valid(token)
     if invite is None:
