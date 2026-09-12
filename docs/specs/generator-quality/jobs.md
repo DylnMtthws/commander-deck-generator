@@ -28,3 +28,13 @@ signals; older decks without new fields must render.
 Tests: prompt 202, deduplicated double POST, owner isolation, missing/expired auth,
 CSRF, success/failure/restart, worker cost attribution, no duplicate cost on polls,
 visible warnings and removal of fake progress. Keep changes focused and accessible.
+
+Additional coordinator acceptance: recovery must not mark a live job abandoned
+merely because another Flask app instance or diagnostic process opens the same DB.
+Use process ownership/leader locking (e.g. a held per-DB file lock) or equivalent
+safe restart detection. Multiple managers/processes may read job status, but only
+one may execute work or perform orphan recovery. A stale lease without fencing
+is not sufficient to prevent duplicate model spend. Test concurrent app/manager
+initialization against an already running job. The production server is one
+Waitress process; diagnostics also create Flask apps, so create_app alone is not
+proof that the live worker restarted.

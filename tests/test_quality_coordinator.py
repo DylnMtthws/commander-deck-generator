@@ -130,3 +130,139 @@ def test_final_narrative_does_not_repeat_untrusted_profile_or_model_claims(
     assert "extra combat" not in text
     assert "bounce your aang" not in text
     assert "infinite" not in text
+
+
+def test_real_builder_preserves_clone_engine_through_selection(
+    tmp_path, monkeypatch, canned_profile
+):
+    import sqlite3
+
+    import numpy as np
+
+    from sabermetrics.models.llm_responses import CardFitResponse
+    from sabermetrics.pipeline.deck_builder import DeckBuilder, DeckBuildRequest
+    from scripts.setup_db import setup_database
+
+    path = tmp_path / "synthetic-aang.db"
+    setup_database(path)
+    records = public_cards()
+    commander_id = records[0]["id"]
+    with sqlite3.connect(path) as conn:
+        for raw in records:
+            faces = raw.get("card_faces") or []
+            conn.execute(
+                "INSERT INTO cards (id,oracle_id,name,mana_cost,cmc,type_line,oracle_text,color_identity,keywords,is_legal_commander,is_legal_in_99,set_code,rarity) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    raw["id"],
+                    raw["oracle_id"],
+                    raw["name"],
+                    raw.get("mana_cost")
+                    or (faces[0].get("mana_cost", "") if faces else ""),
+                    raw["cmc"],
+                    raw["type_line"],
+                    raw.get("oracle_text")
+                    or " // ".join(f["oracle_text"] for f in faces),
+                    json.dumps(raw["color_identity"]),
+                    json.dumps(raw["keywords"]),
+                    int(raw["id"] == commander_id),
+                    1,
+                    raw["set"],
+                    raw["rarity"],
+                ),
+            )
+            conn.execute(
+                "INSERT INTO card_prices(card_id,price_usd,snapshot_date) VALUES (?,?,?)",
+                (raw["id"], 5.0, "2026-09-12"),
+            )
+        for i in range(90):
+            # Synthetic value creatures deliberately compete with the real clone engine.
+            oracle = [
+                "Flying. When this creature enters, draw a card.",
+                "When this creature enters, search your library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+                "When this creature enters, destroy target artifact.",
+            ][i % 3]
+            conn.execute(
+                "INSERT INTO cards (id,oracle_id,name,mana_cost,cmc,type_line,oracle_text,color_identity,keywords,is_legal_commander,is_legal_in_99,set_code,rarity) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    f"review-{i}",
+                    f"review-oracle-{i}",
+                    f"Review Value Creature {i}",
+                    "{2}{G}",
+                    3,
+                    "Creature — Elf",
+                    oracle,
+                    '["G"]',
+                    "[]",
+                    0,
+                    1,
+                    "test",
+                    "common",
+                ),
+            )
+            conn.execute(
+                "INSERT INTO card_prices(card_id,price_usd,snapshot_date) VALUES (?,?,?)",
+                (f"review-{i}", 1.0, "2026-09-12"),
+            )
+    profile = canned_profile(commander_id, ["G", "W", "U"])
+    profile.profile.commander_name = records[0]["name"]
+    monkeypatch.setattr(
+        "sabermetrics.reasoning.profiler.ProfileManager.generate_profile",
+        lambda *a, **k: profile,
+    )
+    fake_model = SimpleNamespace(
+        encode=lambda texts, **kw: (
+            np.ones(8) if isinstance(texts, str) else np.ones((len(texts), 8))
+        )
+    )
+    monkeypatch.setattr(
+        "sabermetrics.analytics.embeddings.EmbeddingService._load_model",
+        lambda *a: fake_model,
+    )
+    monkeypatch.setattr(
+        "sabermetrics.analytics.synergy_matrix._compute_embedding_matrix",
+        lambda cards: (np.zeros((len(cards), len(cards)), dtype=np.float32), False),
+    )
+    monkeypatch.setattr(
+        "sabermetrics.reasoning.fit.FitScorer.score_cards_batch",
+        lambda self, cards, **kw: [
+            (
+                card,
+                CardFitResponse(
+                    fit_score=7, reasoning="Synthetic review", slot_role="utility"
+                ),
+            )
+            for card in cards
+        ],
+    )
+    stages = []
+    result = DeckBuilder(
+        path, progress_callback=lambda stage, percent: stages.append((stage, percent))
+    ).build(
+        DeckBuildRequest(
+            commander_id=commander_id,
+            budget_usd=1000,
+            power_target=4,
+            user_intent="4 mana copy creatures that keep the Aang triggered ability going almost infinitely",
+        )
+    )
+    cards = result.deck.cards
+    assert len(cards) == 99
+    names = [c.card.name for c in cards]
+    eligible = {
+        "Spark Double",
+        "Sakashima of a Thousand Faces",
+        "Clever Impersonator",
+        "Clone",
+    }
+    assert len(set(names) & eligible) >= 2
+    assert result.deck.composition.total_price_usd <= 1000
+    nonbasics = [n for n in names if n not in {"Forest", "Plains", "Island"}]
+    assert len(nonbasics) == len(set(nonbasics))
+    assert all(set(c.card.color_identity) <= {"G", "W", "U"} for c in cards)
+    assert stages[-1] == ("completed", 100)
+    with sqlite3.connect(path) as conn:
+        saved = conn.execute(
+            "SELECT rationale FROM generated_decks WHERE id=?", (result.deck.id,)
+        ).fetchone()
+        assert saved is not None
+        assert "quality_warnings" in json.loads(saved[0])
