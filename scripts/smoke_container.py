@@ -57,3 +57,12 @@ assert client.get("/").status_code == 302
 print(
     "Installed templates, routes, owner login, account exclusion, and session revocation passed"
 )
+
+# The installed package must carry prompts, not just importable Python modules.
+from sabermetrics.reasoning.prompts import load_prompt
+from sabermetrics.config import settings
+
+assert "schema" in load_prompt("profile_synthesis").lower()
+assert settings.llm.profile_model == "deepseek-flash"
+assert settings.llm.fit_model == "deepseek-flash"
+print("Installed generation prompts and DeepSeek defaults passed")

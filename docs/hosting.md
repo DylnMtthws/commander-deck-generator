@@ -9,7 +9,7 @@ Mount a generator-only volume at `/data`; initialize it using
 `python scripts/setup_db.py --db-path /data/sabermetrics.db` and load a public
 card/price corpus. Provision only the intended admin account. Supply
 `SABER_OWNER_EMAIL`, a strong `SABER_SECRET_KEY`, `SABER_COOKIE_SECURE=1`, and
-`ANTHROPIC_API_KEY` through a private environment file.
+`DEEPSEEK_API_KEY` through a private environment file.
 
 The container entry point refuses startup without an owner email or a stable
 secret of at least 32 characters. Its port 8080 belongs behind an HTTPS reverse

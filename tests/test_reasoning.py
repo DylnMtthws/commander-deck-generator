@@ -30,6 +30,7 @@ HAS_DB = DB_PATH.exists()
 
 # --- Prompt template tests ---
 
+
 def test_prompt_templates_exist() -> None:
     """All 4 prompt templates exist and are loadable."""
     expected = {"profile_synthesis", "card_fit", "deck_synthesis", "relevance_screen"}
@@ -69,15 +70,16 @@ def test_relevance_screen_template() -> None:
 
 # --- Client tests ---
 
+
 def test_allowed_models() -> None:
     """Allowed models list includes expected models."""
-    assert "claude-haiku-4-5" in ALLOWED_MODELS
-    assert "claude-sonnet-4-6" in ALLOWED_MODELS
+    assert "deepseek-flash" in ALLOWED_MODELS
+    assert ALLOWED_MODELS == {"deepseek-flash"}
 
 
 def test_model_pricing() -> None:
     """Model pricing structure is correct."""
-    for model in ["claude-haiku-4-5", "claude-sonnet-4-6"]:
+    for model in ["deepseek-flash"]:
         pricing = MODEL_PRICING[model]
         assert "input" in pricing
         assert "cached_input" in pricing
@@ -92,7 +94,7 @@ def test_cost_estimation() -> None:
 
     # Manually compute expected cost for Haiku
     # 1000 input tokens, 500 cached, 200 output
-    pricing = MODEL_PRICING["claude-haiku-4-5"]
+    pricing = MODEL_PRICING["deepseek-flash"]
     expected = (
         500 * pricing["input"] / 1_000_000  # uncached
         + 500 * pricing["cached_input"] / 1_000_000  # cached
@@ -130,6 +132,7 @@ def test_call_result_model() -> None:
 
 # --- Response model tests ---
 
+
 def test_card_fit_response_model() -> None:
     """CardFitResponse validates score range."""
     response = CardFitResponse(
@@ -156,13 +159,12 @@ def test_deck_synthesis_response_model() -> None:
 
 # --- Evidence aggregator tests ---
 
+
 @pytest.mark.skipif(not HAS_DB, reason="No database available")
 def test_evidence_aggregator_loads_commander() -> None:
     """Evidence aggregator can load a commander from DB."""
     conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.execute(
-        "SELECT id FROM cards WHERE is_legal_commander = 1 LIMIT 1"
-    )
+    cursor = conn.execute("SELECT id FROM cards WHERE is_legal_commander = 1 LIMIT 1")
     row = cursor.fetchone()
     conn.close()
 
@@ -197,6 +199,7 @@ def test_evidence_aggregator_gets_reference_chunks() -> None:
 
 # --- Profile cache test (A5.5) ---
 
+
 @pytest.mark.skipif(not HAS_DB, reason="No database available")
 def test_profile_manager_cache_miss_without_key() -> None:
     """ProfileManager returns None on cache miss (no generation without key)."""
@@ -204,9 +207,7 @@ def test_profile_manager_cache_miss_without_key() -> None:
     manager = ProfileManager(DB_PATH)
 
     conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.execute(
-        "SELECT id FROM cards WHERE is_legal_commander = 1 LIMIT 1"
-    )
+    cursor = conn.execute("SELECT id FROM cards WHERE is_legal_commander = 1 LIMIT 1")
     row = cursor.fetchone()
     conn.close()
 

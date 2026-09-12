@@ -8,7 +8,6 @@ version = "0.1.0"
 description = "Sabermetrics for Magic — Commander/EDH deck optimization using LLM-driven reasoning"
 requires-python = ">=3.11"
 dependencies = [
-    "anthropic",
     "argon2-cffi",
     "click",
     "flask",
@@ -71,4 +70,4 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.setuptools.package-data]
-sabermetrics = ["ui/templates/**/*.html", "ui/static/*"]
+sabermetrics = ["ui/templates/**/*.html", "ui/static/*", "reasoning/prompts/*.txt"]

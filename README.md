@@ -62,7 +62,7 @@ See [`pipeline/`](src/sabermetrics/pipeline/),
 ## Run locally
 
 Requires Python 3.11+, disk space for the card corpus and CPU embedding model,
-and an Anthropic credential for actual generation.
+and a DeepSeek API credential for actual generation.
 
 ```sh
 git clone https://github.com/DylnMtthws/commander-deck-generator.git
@@ -76,7 +76,7 @@ export SABER_OWNER_EMAIL=you@example.com
 export SABER_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 export SABER_COOKIE_SECURE=0
 sabermetrics create-admin --email "$SABER_OWNER_EMAIL"
-# Set ANTHROPIC_API_KEY securely in your shell before generating.
+# Set DEEPSEEK_API_KEY securely in your shell before generating.
 sabermetrics serve
 ```
 
@@ -95,6 +95,22 @@ For richer empirical evidence, run `pull-decks`, `cluster-decks`, and
 `value-cards` for the commander. These commands require network access and source
 availability. Settings, scoring weights, model IDs, and cost estimates live in
 [`config/settings.yaml`](config/settings.yaml).
+
+## Model provider and cost
+
+All generation stages use DeepSeek's direct API with `deepseek-flash`, currently
+DeepSeek V4.1 Flash. No Anthropic key is required. Non-thinking mode preserves
+completion budgets for the existing JSON parsers; schema validation and legality
+checks remain in the application. Prefix caching is automatic at the provider.
+
+The cost ledger uses configurable **peak-rate estimates** of $0.30 / million
+uncached input, $0.006 / million cached input, and $1.20 / million output tokens.
+Off-peak billing is lower. These are conservative estimates, not invoices; rates
+were checked September 12, 2026 against the
+[official pricing](https://api-docs.deepseek.com/quick_start/pricing/).
+The existing $15 rolling-30-day spend threshold remains configured. Invalid or
+truncated answers with valid usage counters are charged to the ledger before
+being rejected. Deck quality with this model still requires live evaluation.
 
 ## Verification and code tour
 

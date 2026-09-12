@@ -52,13 +52,9 @@ def test_configured_unknown_model_is_rejected() -> None:
 
 
 def test_pricing_matches_catalog() -> None:
-    """Regression guard for the mispriced cost ledger (haiku/opus were wrong).
+    from sabermetrics.config import settings
 
-    Cached-input must be ~0.1x input, and output rates must match the catalog.
-    """
-    haiku = MODEL_PRICING["claude-haiku-4-5"]
-    assert haiku["input"] == 1.00 and haiku["output"] == 5.00
-    opus = MODEL_PRICING["claude-opus-4-6"]
-    assert opus["input"] == 5.00 and opus["output"] == 25.00
-    for model, p in MODEL_PRICING.items():
-        assert abs(p["cached_input"] - p["input"] * 0.1) < 1e-9, model
+    assert MODEL_PRICING["deepseek-flash"] == settings.llm.deepseek_pricing.model_dump()
+    assert settings.llm.deepseek_pricing.input == 0.30
+    assert settings.llm.deepseek_pricing.cached_input == 0.006
+    assert settings.llm.deepseek_pricing.output == 1.20
