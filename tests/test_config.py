@@ -12,8 +12,8 @@ def test_settings_load_from_yaml() -> None:
 
     assert settings.user.default_budget_usd == 200
     assert settings.user.default_power_target == 3
-    assert settings.llm.profile_model == "deepseek-flash"
-    assert settings.llm.fit_model == "deepseek-flash"
+    assert settings.llm.profile_model == "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
+    assert settings.llm.fit_model == "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"
     assert settings.llm.monthly_cost_ceiling_usd == 15.0
     assert settings.pipeline.hard_filter_target == 3000
     assert settings.output.deck_format == "json"

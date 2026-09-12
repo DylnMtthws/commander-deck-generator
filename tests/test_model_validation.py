@@ -54,7 +54,10 @@ def test_configured_unknown_model_is_rejected() -> None:
 def test_pricing_matches_catalog() -> None:
     from sabermetrics.config import settings
 
-    assert MODEL_PRICING["deepseek-flash"] == settings.llm.deepseek_pricing.model_dump()
-    assert settings.llm.deepseek_pricing.input == 0.30
-    assert settings.llm.deepseek_pricing.cached_input == 0.006
-    assert settings.llm.deepseek_pricing.output == 1.20
+    assert (
+        MODEL_PRICING["deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra"]
+        == settings.llm.provider_pricing.model_dump()
+    )
+    assert settings.llm.provider_pricing.input == 0.06
+    assert settings.llm.provider_pricing.cached_input == 0.015
+    assert settings.llm.provider_pricing.output == 0.18
