@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from sabermetrics.config import Settings, load_settings
+from sabermetrics.config import Settings, config_path, load_settings
 
 
 def test_settings_load_from_yaml() -> None:
@@ -43,3 +43,12 @@ def test_settings_module_singleton() -> None:
 
     assert isinstance(settings, Settings)
     assert settings.user.default_budget_usd > 0
+
+
+def test_config_path_function_resolves_settings() -> None:
+    """Shared config_path contract returns the packaged settings file."""
+    path = config_path("settings.yaml")
+    assert path.is_file()
+    assert path.name == "settings.yaml"
+    loaded = load_settings(path)
+    assert loaded.llm.monthly_cost_ceiling_usd == 15.0

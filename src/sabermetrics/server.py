@@ -5,6 +5,7 @@ from pathlib import Path
 
 from waitress import serve
 
+from sabermetrics.runtime import apply_schema_migrations, assert_readiness
 from sabermetrics.ui.app import create_app
 
 
@@ -15,7 +16,13 @@ def main():
         raise RuntimeError(
             "A stable SABER_SECRET_KEY of at least 32 characters is required"
         )
-    app = create_app(Path(os.environ.get("SABER_DB_PATH", "/data/sabermetrics.db")))
+    # Required config must be present before serving. Schema migrations are
+    # additive and do not fetch external sources or reseed user data.
+    assert_readiness(db_path=None)
+    db_path = Path(os.environ.get("SABER_DB_PATH", "/data/sabermetrics.db"))
+    apply_schema_migrations(db_path)
+    assert_readiness(db_path)
+    app = create_app(db_path)
     serve(app, host="0.0.0.0", port=8080, threads=4)
 
 

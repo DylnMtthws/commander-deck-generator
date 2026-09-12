@@ -20,7 +20,7 @@ import numpy as np
 import yaml
 
 from sabermetrics.analytics.embeddings import get_embedding_service
-from sabermetrics.config import settings
+from sabermetrics.config import config_path, settings
 
 logger = logging.getLogger(__name__)
 
@@ -137,14 +137,8 @@ def build_synergy_matrix(
 
 def _load_synergy_rules() -> list[dict]:
     """Load and parse config/synergy_rules.yaml."""
-    config_path = (
-        Path(__file__).resolve().parent.parent.parent.parent
-        / "config" / "synergy_rules.yaml"
-    )
-    if not config_path.exists():
-        logger.warning("synergy_rules.yaml not found at %s", config_path)
-        return []
-    with open(config_path) as f:
+    rules_path = config_path("synergy_rules.yaml")
+    with open(rules_path) as f:
         data = yaml.safe_load(f) or {}
     return data.get("rules", [])
 

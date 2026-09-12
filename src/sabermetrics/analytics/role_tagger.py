@@ -16,6 +16,7 @@ from pathlib import Path
 import yaml
 
 from sabermetrics.analytics import oracle_patterns
+from sabermetrics.config import config_path
 from sabermetrics.models.tags import RoleTagResult, TaggingStats
 
 logger = logging.getLogger(__name__)
@@ -32,21 +33,16 @@ _ROLE_PATTERNS: dict[str, list[re.Pattern]] = oracle_patterns.ROLE_PATTERNS
 
 def _load_functional_categories() -> dict[str, dict]:
     """Load functional category definitions from config YAML."""
-    config_path = Path(__file__).resolve().parent.parent.parent.parent / "config" / "functional_categories.yaml"
-    if not config_path.exists():
-        logger.warning("functional_categories.yaml not found at %s", config_path)
-        return {}
-    with open(config_path) as f:
+    categories_path = config_path("functional_categories.yaml")
+    with open(categories_path) as f:
         data = yaml.safe_load(f) or {}
     return data.get("categories", {})
 
 
 def _load_overrides() -> dict[str, dict]:
     """Load manual role tag overrides from config YAML."""
-    config_path = Path(__file__).resolve().parent.parent.parent.parent / "config" / "role_tag_overrides.yaml"
-    if not config_path.exists():
-        return {}
-    with open(config_path) as f:
+    overrides_path = config_path("role_tag_overrides.yaml")
+    with open(overrides_path) as f:
         data = yaml.safe_load(f) or {}
     return data.get("overrides", {})
 

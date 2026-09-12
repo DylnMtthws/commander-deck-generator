@@ -648,9 +648,10 @@ class DeckBuilder:
         if request.power_target <= 3:
             try:
                 import yaml as _yaml
+
+                from sabermetrics.config import config_path as _config_path
                 _gc = _yaml.safe_load(
-                    (Path(__file__).resolve().parents[3] / "config"
-                     / "game_changers.yaml").read_text()
+                    _config_path("game_changers.yaml").read_text()
                 ) or {}
                 for v in (_gc.values() if isinstance(_gc, dict) else [_gc]):
                     if isinstance(v, list):

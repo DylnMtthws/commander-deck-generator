@@ -16,9 +16,9 @@ from sabermetrics.analytics.empirical_valuation import (
     annotate_empirical,
     empirical_bonus,
 )
-from sabermetrics.config import settings
-from sabermetrics.pipeline.greedy_optimizer import is_playable_as_land
+from sabermetrics.config import config_path, settings
 from sabermetrics.models.template import DeckTemplate
+from sabermetrics.pipeline.greedy_optimizer import is_playable_as_land
 from sabermetrics.pipeline.slot_assigner import SlotAssignment
 
 logger = logging.getLogger(__name__)
@@ -215,10 +215,8 @@ def _load_removal_auto_includes() -> tuple[dict, set[str]]:
     Returns:
         Tuple of (auto_includes_dict, protected_names_set).
     """
-    config_path = Path(__file__).resolve().parent.parent.parent.parent.parent / "config" / "auto_include_cards.yaml"
-    if not config_path.exists():
-        return {}, set()
-    with open(config_path) as f:
+    includes_path = config_path("auto_include_cards.yaml")
+    with open(includes_path) as f:
         data = yaml.safe_load(f) or {}
     protected: set[str] = set()
     for section_entries in data.values():

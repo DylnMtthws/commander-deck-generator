@@ -8,10 +8,10 @@ then greedily selects nonbasic lands and fills basics by pip demand.
 import logging
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import yaml
 
+from sabermetrics.config import config_path
 from sabermetrics.pipeline.slot_assigner import SlotAssignment
 
 logger = logging.getLogger(__name__)
@@ -70,18 +70,8 @@ def load_karsten_config() -> dict:
     if _KARSTEN_CONFIG is not None:
         return _KARSTEN_CONFIG
 
-    config_path = Path(__file__).resolve().parent.parent.parent.parent / "config" / "karsten_mana_base.yaml"
-    if not config_path.exists():
-        logger.warning("karsten_mana_base.yaml not found, using built-in defaults")
-        _KARSTEN_CONFIG = {
-            "color_source_requirements": {},
-            "land_count_targets": {},
-            "reference_land_count": 36,
-            "minimum_sources_per_color": 5,
-        }
-        return _KARSTEN_CONFIG
-
-    with open(config_path) as f:
+    karsten_path = config_path("karsten_mana_base.yaml")
+    with open(karsten_path) as f:
         data = yaml.safe_load(f) or {}
 
     # Rebuild KARSTEN_SOURCES_99 from YAML structure
@@ -376,8 +366,7 @@ def count_color_pips(cards: list[dict]) -> dict[str, dict]:
 
         mana_cost = card.get("mana_cost") or ""
         cmc = int(float(card.get("cmc", 0) or 0))
-        if cmc < 1:
-            cmc = 1  # Floor at 1 for Karsten lookup
+        cmc = max(cmc, 1)  # Floor at 1 for Karsten lookup
 
         # Count pips per color in this card
         for color in "WUBRG":

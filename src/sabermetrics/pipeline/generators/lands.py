@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from sabermetrics.config import config_path
 from sabermetrics.models.template import DeckTemplate
 from sabermetrics.pipeline.slot_assigner import SlotAssignment
 
@@ -16,10 +17,8 @@ logger = logging.getLogger(__name__)
 
 def _load_auto_includes() -> dict:
     """Load auto-include cards from config."""
-    config_path = Path(__file__).resolve().parent.parent.parent.parent.parent / "config" / "auto_include_cards.yaml"
-    if not config_path.exists():
-        return {}
-    with open(config_path) as f:
+    includes_path = config_path("auto_include_cards.yaml")
+    with open(includes_path) as f:
         return yaml.safe_load(f) or {}
 
 
