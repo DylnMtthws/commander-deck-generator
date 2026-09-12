@@ -33,7 +33,7 @@ dev = [
     "black==26.5.1",
     "mypy==2.3.1",
     "pytest==9.1.1",
-    "ruff==0.16.4",
+    "ruff==0.16.6",
     # Stubs for third-party libraries mypy would otherwise report as untyped.
     "types-PyYAML",
     "types-waitress",
