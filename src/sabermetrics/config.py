@@ -1,13 +1,41 @@
 """Configuration loader for Sabermetrics.
 
-Loads settings from config/settings.yaml and exposes typed access.
+Resolves packaged YAML via :func:`config_path` (``SABER_CONFIG_DIR`` first,
+then package data). ``load_settings(explicit_path)`` remains usable.
 """
 
+from __future__ import annotations
+
+import os
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
+
+# Safe config resource names: basename only, yaml suffix, no traversal.
+_SAFE_CONFIG_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$")
+
+REQUIRED_CONFIG_FILES: tuple[str, ...] = (
+    "settings.yaml",
+    "synergy_rules.yaml",
+    "archetype_signatures.yaml",
+    "karsten_mana_base.yaml",
+    "auto_include_cards.yaml",
+    "game_changers.yaml",
+    "functional_categories.yaml",
+    "role_tag_overrides.yaml",
+)
+
+OPTIONAL_CONFIG_FILES: tuple[str, ...] = (
+    "strategic_articles.yaml",
+    "set_mechanics_articles.yaml",
+)
+
+
+class ConfigError(Exception):
+    """Missing, unsafe, malformed, or unreadable configuration resource."""
 
 
 class UserSettings(BaseModel):
@@ -229,38 +257,97 @@ class Settings(BaseModel):
     scoring: ScoringSettings = Field(default_factory=ScoringSettings)
 
 
-def _find_config_path() -> Path:
-    """Locate settings.yaml by searching up from this file's location."""
-    # Try project root (two levels up from src/sabermetrics/)
-    src_dir = Path(__file__).resolve().parent
-    project_root = src_dir.parent.parent
-    config_path = project_root / "config" / "settings.yaml"
-    if config_path.exists():
-        return config_path
-    # Fallback: current working directory
-    cwd_path = Path.cwd() / "config" / "settings.yaml"
-    if cwd_path.exists():
-        return cwd_path
-    return config_path  # Return expected path even if missing
+def _validate_config_name(name: str) -> str:
+    """Return ``name`` if it is a safe YAML basename; raise otherwise."""
+    if not name or not isinstance(name, str):
+        raise ConfigError("Configuration name must be a non-empty string")
+    # Reject separators before the regex so the error is explicit.
+    if name != Path(name).name or "/" in name or "\\" in name or ".." in name:
+        raise ConfigError(f"Unsafe configuration name: {name!r}")
+    if not _SAFE_CONFIG_NAME.match(name):
+        raise ConfigError(f"Unsafe configuration name: {name!r}")
+    return name
+
+
+def _packaged_config_dir() -> Path:
+    """Directory of packaged YAML files next to this module."""
+    return Path(__file__).resolve().parent / "config_data"
+
+
+def _repo_config_dir() -> Path | None:
+    """Repo-root ``config/`` when running from a source checkout (src layout)."""
+    # src/sabermetrics/config.py -> parents[2] is the repository root.
+    candidate = Path(__file__).resolve().parents[2] / "config"
+    if candidate.is_dir():
+        return candidate
+    return None
+
+
+def config_path(name: str) -> Path:
+    """Resolve a configuration YAML to a concrete filesystem path.
+
+    Order: ``SABER_CONFIG_DIR`` (if set), packaged ``config_data``, then the
+    source-tree ``config/`` directory when present. Does not consult cwd.
+    Raises :class:`ConfigError` for unsafe names or missing files.
+
+    Args:
+        name: Basename of a YAML file (e.g. ``synergy_rules.yaml``).
+
+    Returns:
+        Absolute path to an existing configuration file.
+    """
+    name = _validate_config_name(name)
+    candidates: list[Path] = []
+
+    explicit_dir = os.environ.get("SABER_CONFIG_DIR", "").strip()
+    if explicit_dir:
+        base = Path(explicit_dir).expanduser()
+        if not base.is_dir():
+            raise ConfigError(
+                f"SABER_CONFIG_DIR is not a directory: {explicit_dir!r}"
+            )
+        candidates.append((base / name).resolve())
+    else:
+        candidates.append(_packaged_config_dir() / name)
+        repo = _repo_config_dir()
+        if repo is not None:
+            candidates.append(repo / name)
+
+    seen: set[Path] = set()
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        if path.is_file():
+            return path
+
+    searched = ", ".join(str(p) for p in candidates) or "(no search paths)"
+    raise ConfigError(f"Required configuration file {name!r} not found. Looked in: {searched}")
 
 
 def load_settings(config_path: Path | None = None) -> Settings:
     """Load settings from YAML file.
 
     Args:
-        config_path: Explicit path to settings.yaml. If None, auto-discovers.
+        config_path: Explicit path to settings.yaml. If None, uses
+            :func:`config_path`. An explicit path that does not exist
+            returns defaults (existing API).
 
     Returns:
         Validated Settings object with defaults for any missing values.
     """
-    if config_path is None:
-        config_path = _find_config_path()
+    settings_file = config_path
+    if settings_file is None:
+        settings_file = globals()["config_path"]("settings.yaml")
 
-    if not config_path.exists():
+    if not settings_file.exists():
         return Settings()
 
-    with open(config_path) as f:
+    with open(settings_file) as f:
         raw: dict[str, Any] = yaml.safe_load(f) or {}
+
+    if not isinstance(raw, dict):
+        raise ConfigError(f"Malformed settings file {settings_file}: expected a mapping")
 
     return Settings(**raw)
 

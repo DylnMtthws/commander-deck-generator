@@ -76,12 +76,25 @@
     </form>
 </section>
 
-<!-- Loading overlay for deck generation -->
-<div id="loading-overlay" class="loading-overlay" style="display:none">
+<!-- Loading overlay for deck generation: real job stage/progress only -->
+<div id="loading-overlay" class="loading-overlay" style="display:none"
+     role="dialog" aria-modal="true" aria-labelledby="loading-commander"
+     aria-describedby="loading-text">
     <div class="loading-content">
         <h2 class="loading-commander" id="loading-commander"></h2>
-        <div class="loading-bar-track"><div class="loading-bar-fill" id="loading-bar"></div></div>
-        <p class="loading-text" id="loading-text">Preparing…</p>
+        <div class="loading-bar-track">
+            <div class="loading-bar-fill" id="loading-bar" role="progressbar"
+                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+        </div>
+        <p class="loading-text" id="loading-text" aria-live="polite">Queued</p>
+        <p class="mt-2 text-xs text-muted" id="loading-elapsed"></p>
+        <p class="mt-3 text-sm text-brand-hover" id="loading-error" hidden></p>
+        <div class="mt-4 flex justify-center gap-3" id="loading-actions" hidden>
+            <button type="button" id="loading-retry"
+                    class="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover">Retry</button>
+            <button type="button" id="loading-dismiss"
+                    class="rounded-xl border border-line px-5 py-2.5 text-sm font-semibold text-muted hover:text-body">Dismiss</button>
+        </div>
     </div>
 </div>
 
@@ -225,54 +238,216 @@
 {% block scripts %}
 <script>
 (function () {
-    var flavor = [
-        "Summoning the commander…",
-        "Scouting the multiverse for candidates…",
-        "Crunching the numbers… hold my mana rock",
-        "Asking the AI to judge the pool…",
-        "Assembling the 99… budget is a feature",
-        "Writing the game plan…",
-        "Calculating power level…"
-    ];
+    var STORAGE_KEY = 'sabermetrics.generationJob';
     var overlay = document.getElementById('loading-overlay');
     if (!overlay) return;
     var bar = document.getElementById('loading-bar');
     var text = document.getElementById('loading-text');
+    var elapsedEl = document.getElementById('loading-elapsed');
+    var errorEl = document.getElementById('loading-error');
+    var actions = document.getElementById('loading-actions');
+    var retryBtn = document.getElementById('loading-retry');
+    var dismissBtn = document.getElementById('loading-dismiss');
     var cmdrEl = document.getElementById('loading-commander');
+    var form = document.querySelector('form.build-form');
     var csrf = document.querySelector('meta[name="csrf-token"]');
     csrf = csrf ? csrf.getAttribute('content') : '';
-    var progTimer, flavorTimer;
+    var pollTimer = null;
+    var pollDelay = 1000;
+    var commanderName = {{ commander_name | tojson }};
 
-    function show(name) {
-        cmdrEl.textContent = name;
-        bar.style.width = '0%';
-        text.textContent = flavor[0];
-        overlay.style.display = 'flex';
-        var p = 0, i = 0;
-        progTimer = setInterval(function () { p += (90 - p) * 0.04; bar.style.width = p + '%'; }, 500);
-        flavorTimer = setInterval(function () { i = (i + 1) % flavor.length; text.textContent = flavor[i]; }, 4000);
+    function setProgress(pct, label, elapsed) {
+        var n = Math.max(0, Math.min(100, Number(pct) || 0));
+        bar.style.width = n + '%';
+        bar.setAttribute('aria-valuenow', String(Math.round(n)));
+        text.textContent = label || 'In progress';
+        if (elapsedEl) {
+            if (elapsed == null || elapsed === '') {
+                elapsedEl.textContent = '';
+            } else {
+                elapsedEl.textContent = 'Elapsed: ' + Number(elapsed).toFixed(0) + 's';
+            }
+        }
     }
-    function stop() { clearInterval(progTimer); clearInterval(flavorTimer); }
+
+    function hideOverlay() {
+        overlay.style.display = 'none';
+        if (actions) actions.hidden = true;
+        if (errorEl) { errorEl.hidden = true; errorEl.textContent = ''; }
+        if (form) {
+            var btn = form.querySelector('button[type="submit"]');
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    function showOverlay(name) {
+        cmdrEl.textContent = name || commanderName || 'Generating deck';
+        if (errorEl) { errorEl.hidden = true; errorEl.textContent = ''; }
+        if (actions) actions.hidden = true;
+        overlay.style.display = 'flex';
+        if (form) {
+            var btn = form.querySelector('button[type="submit"]');
+            if (btn) btn.disabled = true;
+        }
+    }
+
+    function stopPolling() {
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    }
+
+    function clearStored() {
+        try { sessionStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    }
+
+    function storeJob(jobId, statusUrl) {
+        try {
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+                jobId: jobId,
+                statusUrl: statusUrl,
+                commanderName: commanderName
+            }));
+        } catch (e) {}
+    }
+
+    function fail(message, retryable) {
+        stopPolling();
+        clearStored();
+        setProgress(bar.getAttribute('aria-valuenow') || 0, 'Failed', null);
+        if (errorEl) {
+            errorEl.textContent = message || 'Deck generation failed.';
+            errorEl.hidden = false;
+        }
+        if (actions) actions.hidden = !retryable;
+        if (form) {
+            var btn = form.querySelector('button[type="submit"]');
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    function applyStatus(d) {
+        var label = d.stage_label || d.stage || (d.status === 'queued' ? 'Queued' : 'In progress');
+        var pct = typeof d.progress === 'number' ? d.progress : 0;
+        setProgress(pct, label, d.elapsed_seconds);
+        if (d.status === 'completed' && d.deck_url) {
+            stopPolling();
+            clearStored();
+            setProgress(100, 'Complete', d.elapsed_seconds);
+            window.location.href = d.deck_url;
+            return;
+        }
+        if (d.status === 'failed') {
+            fail(d.error || 'Deck generation failed.', true);
+            return;
+        }
+        pollDelay = 1000;
+        schedulePoll(d.status_url);
+    }
+
+    function poll(statusUrl) {
+        fetch(statusUrl, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        })
+        .then(function (resp) {
+            if (resp.status === 401) {
+                fail('Your session expired. Sign in and retry.', false);
+                return null;
+            }
+            if (resp.status === 403 || resp.status === 404) {
+                fail('This build is not available.', false);
+                return null;
+            }
+            return resp.json().then(function (d) {
+                return { ok: resp.ok, d: d };
+            });
+        })
+        .then(function (r) {
+            if (!r) return;
+            if (r.ok) {
+                applyStatus(r.d);
+            } else {
+                fail((r.d && r.d.error) || 'Could not read build status.', true);
+            }
+        })
+        .catch(function () {
+            text.textContent = 'Lost connection. Retrying…';
+            pollDelay = Math.min(8000, (pollDelay || 1000) * 2);
+            schedulePoll(statusUrl);
+        });
+    }
+
+    function schedulePoll(statusUrl) {
+        stopPolling();
+        if (!statusUrl) return;
+        pollTimer = setTimeout(function () { poll(statusUrl); }, pollDelay);
+    }
+
+    function startJob(jobId, statusUrl) {
+        showOverlay(commanderName);
+        setProgress(0, 'Queued', 0);
+        storeJob(jobId, statusUrl);
+        pollDelay = 1000;
+        poll(statusUrl);
+    }
+
+    if (retryBtn) {
+        retryBtn.addEventListener('click', function () {
+            hideOverlay();
+            if (form) form.requestSubmit();
+        });
+    }
+    if (dismissBtn) {
+        dismissBtn.addEventListener('click', function () {
+            stopPolling();
+            clearStored();
+            hideOverlay();
+        });
+    }
 
     document.addEventListener('submit', function (e) {
-        var form = e.target;
-        if (!form.classList.contains('build-form')) return;
+        var submitted = e.target;
+        if (!submitted.classList.contains('build-form')) return;
         e.preventDefault();
-        show({{ commander_name | tojson }});
-        fetch(form.action, {
+        showOverlay(commanderName);
+        setProgress(0, 'Submitting…', 0);
+        fetch(submitted.action, {
             method: 'POST',
-            body: new FormData(form),
+            body: new FormData(submitted),
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf }
         })
-        .then(function (resp) { return resp.json().then(function (d) { return { ok: resp.ok, d: d }; }); })
-        .then(function (r) {
-            if (r.ok && r.d.deck_url) {
-                stop(); bar.style.width = '100%'; text.textContent = 'Done! Redirecting…';
-                setTimeout(function () { window.location.href = r.d.deck_url; }, 600);
-            } else { stop(); overlay.style.display = 'none'; alert(r.d.error || 'Deck generation failed.'); }
+        .then(function (resp) {
+            return resp.json().then(function (d) {
+                return { ok: resp.ok, status: resp.status, d: d };
+            }).catch(function () {
+                return { ok: resp.ok, status: resp.status, d: {} };
+            });
         })
-        .catch(function (err) { stop(); overlay.style.display = 'none'; alert('Deck generation failed: ' + err.message); });
+        .then(function (r) {
+            var d = r.d || {};
+            if (r.status === 202 && d.status_url) {
+                startJob(d.job_id, d.status_url);
+                return;
+            }
+            if (r.status === 409 && d.status_url) {
+                startJob(d.job_id, d.status_url);
+                return;
+            }
+            fail(d.error || 'Deck generation failed.', true);
+        })
+        .catch(function (err) {
+            fail('Network error: ' + (err && err.message ? err.message : 'please retry.'), true);
+        });
     });
+
+    try {
+        var stored = sessionStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            if (parsed && parsed.statusUrl) {
+                commanderName = parsed.commanderName || commanderName;
+                startJob(parsed.jobId, parsed.statusUrl);
+            }
+        }
+    } catch (e) {}
 })();
 </script>
 {% endblock %}

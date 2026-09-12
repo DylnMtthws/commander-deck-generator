@@ -3,14 +3,18 @@
 Endpoints:
 - GET /                         Home / commander selector
 - GET /commander/<name>/profile Commander profile view
-- POST /generate-deck           Trigger deck generation
+- POST /generate-deck           Enqueue deck generation (202 + job)
+- GET /jobs/<job_id>            Owner-scoped job page (non-JS progress)
+- GET /jobs/<job_id>/status     Owner-scoped JSON job status
 - GET /deck/<deck_id>           View generated deck
 - GET /report                   Cost and usage report
 """
 
 import json
 import logging
+import math
 import sqlite3
+import uuid
 from pathlib import Path
 
 from flask import (
@@ -28,6 +32,13 @@ from flask_login import current_user
 
 from sabermetrics import db
 from sabermetrics.analytics.cvar import PRICE_FLOOR_USD
+from sabermetrics.generation_jobs import (
+    JobConflict,
+    JobManager,
+    JobUserError,
+    WorkerUnavailable,
+    request_fingerprint,
+)
 from sabermetrics.ui.explore_filters import ABILITY_OPTIONS, WUBRG, build_explore_query
 
 bp = Blueprint("main", __name__)
@@ -65,9 +76,9 @@ def _monthly_spend(db_path: Path) -> float:
 
 def _quota_reset_label() -> str:
     """Human label for when the per-user monthly quota next resets."""
-    from datetime import date
+    from datetime import UTC, date, datetime
 
-    today = date.today()
+    today = datetime.now(UTC).date()
     year, month = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
     return date(year, month, 1).strftime("%B 1")
 
@@ -97,6 +108,154 @@ def _require_login():
 
 def _db_path() -> Path:
     return current_app.config["DB_PATH"]
+
+
+def _job_manager() -> JobManager:
+    manager = current_app.extensions.get("generation_jobs")
+    if manager is None:
+        from sabermetrics.generation_jobs import attach_to_app
+
+        manager = attach_to_app(current_app)
+    return manager
+
+
+def _wants_json() -> bool:
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or request.accept_mimetypes.best == "application/json"
+    )
+
+
+def _quality_warning_messages(rationale: dict | None) -> list[str]:
+    """Normalize quality_warnings / unavailable signals for old and new decks."""
+    if not isinstance(rationale, dict):
+        return []
+    messages: list[str] = []
+    seen: set[str] = set()
+
+    def add(text: str) -> None:
+        item = " ".join(str(text).split())
+        if item and item not in seen:
+            seen.add(item)
+            messages.append(item)
+
+    raw = rationale.get("quality_warnings")
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                add(item.get("message") or item.get("code") or item.get("kind") or "")
+            elif item:
+                add(item)
+    elif isinstance(raw, dict):
+        for kind, items in raw.items():
+            kind_label = str(kind).replace("_", " ")
+            if isinstance(items, list):
+                if not items:
+                    continue
+                for item in items:
+                    if isinstance(item, dict):
+                        add(item.get("message") or f"{kind_label}: {item}")
+                    else:
+                        add(f"{kind_label}: {item}" if item else kind_label)
+            elif items is True:
+                add(kind_label)
+            elif items:
+                add(f"{kind_label}: {items}")
+    elif isinstance(raw, str) and raw.strip():
+        add(raw)
+
+    meta = rationale.get("meta") if isinstance(rationale.get("meta"), dict) else {}
+    unavailable = (
+        rationale.get("signals_unavailable")
+        or meta.get("signals_unavailable")
+        or []
+    )
+    if isinstance(unavailable, list):
+        for name in unavailable:
+            add(f"Scoring signal unavailable: {name}")
+    signals = rationale.get("signals")
+    if isinstance(signals, dict):
+        for name, live in signals.items():
+            if live is False:
+                add(f"Scoring signal unavailable: {name}")
+    return messages
+
+
+def _assert_execution_allowed(captured: dict) -> None:
+    """Re-check cost ceiling and per-user quota inside the worker."""
+    from sabermetrics.config import settings
+
+    db_path = Path(captured["db_path"])
+    owner_id = captured["owner_id"]
+    quota = int(captured["quota"])
+    if _monthly_spend(db_path) >= settings.llm.monthly_cost_ceiling_usd:
+        raise JobUserError(
+            "Generation is paused: the monthly cost ceiling has been reached. "
+            "Please try again next month."
+        )
+    used = db.DecksRepo(db_path).count_this_month(owner_id)
+    if used >= quota:
+        raise JobUserError(
+            f"Monthly limit reached ({used}/{quota} decks). "
+            f"Your quota resets {_quota_reset_label()}."
+        )
+
+
+def _execute_generation(captured: dict, progress_callback) -> str:
+    """Run the builder with captured request values (no Flask request context)."""
+    from sabermetrics.pipeline.deck_builder import DeckBuilder, DeckBuildRequest
+
+    db_path = Path(captured["db_path"])
+    deck_id = captured["deck_id"]
+    builder = DeckBuilder(db_path, progress_callback=progress_callback)
+    request = DeckBuildRequest(
+        commander_id=captured["commander_id"],
+        budget_usd=captured["budget_usd"],
+        power_target=captured["power_target"],
+        strategy=captured["strategy"],
+        user_intent=captured["user_intent"],
+        deck_name=captured["deck_name"],
+        owner_id=captured["owner_id"],
+        deck_id=deck_id,
+    )
+    result = builder.build(request)
+    db.DecksRepo(db_path).set_owner(result.deck.id, captured["owner_id"])
+    return result.deck.id
+
+
+def _make_generation_work(captured: dict):
+    """Callable stored on the job: quotas, cost attribution, then the builder."""
+
+    def work(progress_callback) -> str:
+        _assert_execution_allowed(captured)
+        deck_id = str(uuid.uuid4())
+        payload = {**captured, "deck_id": deck_id}
+        from sabermetrics.reasoning.client import cost_attribution
+
+        with cost_attribution(payload["owner_id"], deck_id):
+            return _execute_generation(payload, progress_callback)
+
+    return work
+
+
+def _job_json_response(job, *, status_code: int = 200):
+    deck_url = None
+    if job.status == "completed" and job.deck_id:
+        deck_url = url_for("main.view_deck", deck_id=job.deck_id)
+    body = job.to_public_dict(deck_url=deck_url)
+    body["status_url"] = url_for("main.job_status", job_id=job.id)
+    body["job_url"] = url_for("main.view_job", job_id=job.id)
+    response = jsonify(body)
+    response.status_code = status_code
+    response.headers["Location"] = body["status_url"]
+    return response
+
+
+def _owner_job_or_none(job_id: str):
+    job = _job_manager().get(job_id)
+    if job is None or job.owner_id != current_user.id:
+        return None
+    return job
 
 
 @bp.route("/")
@@ -152,7 +311,7 @@ def explore():
     conn.row_factory = sqlite3.Row
     try:
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
-    except Exception as e:
+    except sqlite3.Error as e:
         logger.warning("Explore query error: %s", e)
         rows = []
     finally:
@@ -360,17 +519,23 @@ def commander_profile(name: str):
 
 @bp.route("/generate-deck", methods=["POST"])
 def generate_deck():
-    """Trigger deck generation (async-ish: blocks until complete)."""
+    """Enqueue deck generation; POST returns promptly with a job id."""
     db_path = _db_path()
 
-    commander_id = request.form.get("commander_id", "")
-    budget = float(request.form.get("budget", 200))
-    power = int(request.form.get("power", 3))
+    commander_id = (request.form.get("commander_id") or "").strip()
     strategy = request.form.get("strategy") or None
     user_intent = request.form.get("user_intent") or None
     deck_name = request.form.get("deck_name") or None
+    is_ajax = _wants_json()
 
-    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    try:
+        budget = float(request.form.get("budget", 200))
+        power = int(request.form.get("power", 3))
+    except (TypeError, ValueError):
+        return _generation_blocked(is_ajax, "Invalid budget or power.", 400)
+
+    if not math.isfinite(budget) or budget <= 0 or not 1 <= power <= 5:
+        return _generation_blocked(is_ajax, "Budget must be positive and power must be from 1 to 5.", 400)
 
     if not commander_id:
         if is_ajax:
@@ -379,7 +544,7 @@ def generate_deck():
 
     from sabermetrics.config import settings
 
-    # Global cost ceiling (friendly pre-check; the client enforces the hard stop).
+    # Global cost ceiling (friendly pre-check; the worker re-checks at execution).
     if _monthly_spend(db_path) >= settings.llm.monthly_cost_ceiling_usd:
         return _generation_blocked(
             is_ajax,
@@ -400,49 +565,71 @@ def generate_deck():
             429,
         )
 
-    import uuid as _uuid
-
-    from sabermetrics.errors import LLMCostCeilingExceeded
-
-    deck_id = str(_uuid.uuid4())
+    captured = {
+        "db_path": str(db_path),
+        "owner_id": current_user.id,
+        "quota": quota,
+        "commander_id": commander_id,
+        "budget_usd": budget,
+        "power_target": power,
+        "strategy": strategy,
+        "user_intent": user_intent,
+        "deck_name": deck_name,
+    }
+    fingerprint = request_fingerprint(
+        current_user.id,
+        commander_id,
+        budget,
+        power,
+        strategy,
+        user_intent,
+        deck_name,
+    )
     try:
-        from sabermetrics.pipeline.deck_builder import DeckBuilder, DeckBuildRequest
-        from sabermetrics.reasoning.client import cost_attribution
-
-        builder = DeckBuilder(db_path)
-        req = DeckBuildRequest(
-            commander_id=commander_id,
-            budget_usd=budget,
-            power_target=power,
-            strategy=strategy,
-            user_intent=user_intent,
-            deck_name=deck_name,
+        job = _job_manager().submit(
             owner_id=current_user.id,
-            deck_id=deck_id,
+            fingerprint=fingerprint,
+            request_payload=captured,
+            work=_make_generation_work(captured),
         )
-        # Attribute every LLM cost this build incurs to this user + deck.
-        with cost_attribution(current_user.id, deck_id):
-            result = builder.build(req)
-        # Claim ownership so the deck is scoped to this user (privacy + quota).
-        db.DecksRepo(db_path).set_owner(result.deck.id, current_user.id)
-        deck_url = url_for("main.view_deck", deck_id=result.deck.id)
-
+    except WorkerUnavailable as exc:
+        return _generation_blocked(is_ajax, str(exc), 503)
+    except JobConflict as exc:
         if is_ajax:
-            return jsonify({"deck_url": deck_url})
-        return redirect(deck_url)
+            body = {"error": str(exc)}
+            if exc.owned and exc.job is not None:
+                body["job_id"] = exc.job.id
+                body["status_url"] = url_for("main.job_status", job_id=exc.job.id)
+                body["job_url"] = url_for("main.view_job", job_id=exc.job.id)
+            return jsonify(body), 409
+        flash(str(exc), "error")
+        if exc.owned and exc.job is not None:
+            return redirect(url_for("main.view_job", job_id=exc.job.id))
+        return redirect(request.referrer or url_for("main.index"))
 
-    except LLMCostCeilingExceeded:
-        return _generation_blocked(
-            is_ajax,
-            "Generation stopped: the monthly cost ceiling was reached mid-build.",
-            503,
-        )
-    except Exception as e:
-        logger.error("Deck generation failed: %s", e)
-        if is_ajax:
-            return jsonify({"error": f"Deck generation failed: {e}"}), 500
-        flash(f"Deck generation failed: {e}", "error")
-        return redirect(url_for("main.index"))
+    if is_ajax:
+        return _job_json_response(job, status_code=202)
+    return redirect(url_for("main.view_job", job_id=job.id))
+
+
+@bp.route("/jobs/<job_id>")
+def view_job(job_id: str):
+    """Owner-scoped HTML job page. Reloads real status; no pretend progress."""
+    job = _owner_job_or_none(job_id)
+    if job is None:
+        abort(404)
+    if job.status == "completed" and job.deck_id:
+        return redirect(url_for("main.view_deck", deck_id=job.deck_id))
+    return render_template("job_status.html", job=job)
+
+
+@bp.route("/jobs/<job_id>/status")
+def job_status(job_id: str):
+    """Owner-scoped JSON status. Polling never starts work or spends."""
+    job = _owner_job_or_none(job_id)
+    if job is None:
+        return jsonify({"error": "not found"}), 404
+    return _job_json_response(job)
 
 
 @bp.route("/deck/<deck_id>/delete", methods=["POST"])
@@ -785,6 +972,8 @@ def view_deck(deck_id: str):
     card_feedback = feedback_repo.card_map(current_user.id, deck_id) if can_feedback else {}
     deck_feedback = feedback_repo.deck(current_user.id, deck_id) if can_feedback else None
 
+    quality_warnings = _quality_warning_messages(rationale)
+
     return render_template(
         "deck_view.html",
         deck=deck_data,
@@ -797,6 +986,7 @@ def view_deck(deck_id: str):
         can_feedback=can_feedback,
         card_feedback=card_feedback,
         deck_feedback=deck_feedback,
+        quality_warnings=quality_warnings,
     )
 
 
@@ -858,7 +1048,7 @@ def cost_report():
         )
         profile_count = profile_cursor.fetchone()["count"]
 
-    except Exception as e:
+    except sqlite3.Error as e:
         logger.warning("Report query error: %s", e)
         by_type = []
         total_30d = 0.0

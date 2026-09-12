@@ -17,10 +17,11 @@ import yaml
 
 from sabermetrics.analytics.components import (
     count_board_wipes,
-    count_removal,
     count_ramp_spells,
+    count_removal,
     count_tutors,
 )
+from sabermetrics.config import config_path
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +45,9 @@ def _load_game_changers(config_dir: Path | None = None) -> dict[str, int]:
         Dict mapping card_name (lowered) to bracket_threshold.
     """
     if config_dir is None:
-        config_dir = Path(__file__).resolve().parent.parent.parent.parent / "config"
-
-    gc_path = config_dir / "game_changers.yaml"
+        gc_path = config_path("game_changers.yaml")
+    else:
+        gc_path = config_dir / "game_changers.yaml"
     if not gc_path.exists():
         return {}
 

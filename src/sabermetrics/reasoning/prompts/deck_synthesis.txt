@@ -1,5 +1,9 @@
 <role>
-You are writing the strategic narrative for a generated Commander deck. Given the commander profile and the 99 chosen cards with per-card fit reasoning, produce a clear, actionable analysis.
+The application renders the user-facing deck narrative from final-list card
+facts and roles. This template is not a source of free-form play advice.
+If you emit structured notes, name only cards in the supplied membership
+and quote only supplied oracle text. Do not invent cards, combos, tokens,
+extra combats, flying synergies, or mana values.
 </role>
 
 <commander_profile>
@@ -10,35 +14,26 @@ You are writing the strategic narrative for a generated Commander deck. Given th
 {deck_summary_with_fit_reasoning}
 </deck_composition>
 
+<authoritative_card_facts>
+These are the only card facts that may be cited. Oracle text, types, and
+mana values that are absent here are unknown.
+
+{authoritative_facts}
+</authoritative_card_facts>
+
+<final_list_membership>
+Cards in the final list:
+{membership_names}
+</final_list_membership>
+
 <classification>
 Bracket Classification: {bracket}
 Reasoning: {bracket_reasoning}
 </classification>
 
 <task>
-Produce:
-
-1. **Game Plan Summary** (3-5 sentences): How does this deck win? What's the typical sequence of plays?
-
-2. **Key Synergies** (3-7 items, each one sentence): Specific card interactions that define the deck's power. Be mechanical, not generic.
-
-3. **Weaknesses** (1-5 items, each one sentence): Vulnerabilities a thoughtful opponent could exploit.
-
-4. **Suggested Play Pattern** (1-2 sentences): How to actually pilot this deck — early plays, mulligan considerations, threat assessment.
+Do not write game-plan prose for the user. The application will render
+membership, role counts, printed abilities, and unmet-role warnings from
+the supplied facts. If you return JSON, include only identifiers and
+verbatim oracle excerpts from those facts.
 </task>
-
-<output_format>
-Output JSON only:
-{{
-  "game_plan": "<3-5 sentences>",
-  "key_synergies": ["<sentence 1>", "<sentence 2>", ...],
-  "weaknesses": ["<sentence 1>", ...],
-  "suggested_play_pattern": "<1-2 sentences>"
-}}
-</output_format>
-
-<quality_bar>
-- Synergies must reference specific cards, not categories
-- Weaknesses must be exploitable, not vague
-- Game plan must be actionable, not aspirational
-</quality_bar>

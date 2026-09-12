@@ -20,12 +20,9 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
+from sabermetrics.config import config_path
 
-_CONFIG_PATH = (
-    Path(__file__).resolve().parent.parent.parent.parent
-    / "config" / "archetype_signatures.yaml"
-)
+logger = logging.getLogger(__name__)
 
 
 class Archetype(BaseModel):
@@ -83,12 +80,12 @@ def load_library(path: Path | None = None) -> ArchetypeLibrary:
         An :class:`ArchetypeLibrary` with normalized signatures and a
         tag-alias reverse index ready for scoring/validation.
     """
-    config_path = path or _CONFIG_PATH
-    if not config_path.exists():
-        logger.warning("archetype_signatures.yaml not found at %s", config_path)
+    signatures_path = path or config_path("archetype_signatures.yaml")
+    if not signatures_path.exists():
+        logger.warning("archetype_signatures.yaml not found at %s", signatures_path)
         return ArchetypeLibrary(archetypes={}, default_min_score=2.0)
 
-    with open(config_path) as f:
+    with open(signatures_path) as f:
         data = yaml.safe_load(f) or {}
 
     default_min = float(data.get("default_min_score", 2.0))
