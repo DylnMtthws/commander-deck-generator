@@ -499,6 +499,7 @@ def swap_refine(
                     pass_num + 1, old_name, new_name,
                     current_obj, best_swap_obj,
                 )
+                current_obj = best_swap_obj
 
         if not improved:
             logger.info("Swap refinement converged after %d passes", pass_num + 1)

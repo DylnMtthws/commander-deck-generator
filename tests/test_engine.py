@@ -427,7 +427,7 @@ def test_review_exception_is_surfaced_not_hidden(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="vet exploded"):
         builder._llm_safety_check(
             deck,
-            deck[0:1],
+            [a.card for a in deck],
             synergy=None,
             role_targets=None,
             profile_result=profile_result,

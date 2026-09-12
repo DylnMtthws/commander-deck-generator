@@ -382,13 +382,15 @@ class RampPackageGenerator:
                 src = pool_index.get(c.get("name", ""))
                 if src is None:
                     continue
+                if "_facts" in src and not set(src["_facts"]["roles"]) & {'ramp'}:
+                    continue
                 # id/price too: the table row may be a different printing
                 # with no price snapshot -- it then costs $0 in build-time
                 # budget sums and renders at the $0.05 floor in the UI. The
                 # pool's printing (cheapest priced) is canonical.
                 for k in ("_anti_engine", "_cvar_score",
                           "_empirical_inclusion", "_empirical_reliable",
-                          "id", "oracle_id", "set_code", "price_usd"):
+                          "id", "oracle_id", "set_code", "price_usd", "role_tags", "_facts"):
                     if k in src:
                         c[k] = src[k]
                 if c.get("_anti_engine"):

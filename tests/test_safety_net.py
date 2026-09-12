@@ -123,13 +123,8 @@ class _FakeScorer:
         ]
 
 
-def test_vet_swap_ins_are_re_vetted_once(monkeypatch, tmp_path):
-    """The Eiganjo door: replacements face one re-vet round, not zero, not N.
-
-    Bad Pick (score 2) is replaced by Trap Replacement, which the re-vet also
-    fails (score 2) -> replaced again by Safe Aura, accepted without a third
-    call. Exactly two batched calls total.
-    """
+def test_replacement_menu_is_reviewed_before_any_swap(monkeypatch, tmp_path):
+    """Bad original and trap are rejected; the reviewed safe menu option wins."""
     from types import SimpleNamespace
 
     import sabermetrics.reasoning.fit as fit_mod
@@ -177,19 +172,14 @@ def test_vet_swap_ins_are_re_vetted_once(monkeypatch, tmp_path):
 
     names = {a.card["name"] for a in out}
     assert "Bad Pick" not in names
-    assert "Trap Replacement" not in names  # caught by the re-vet
+    assert "Trap Replacement" not in names
     assert "Safe Aura" in names
-    assert len(_FakeScorer.calls) == 2      # initial vet + one re-vet, no third
-    assert _FakeScorer.calls[1] == ["Trap Replacement"]
+    assert len(_FakeScorer.calls) == 1
+    assert {"Bad Pick", "Trap Replacement", "Safe Aura"} <= set(_FakeScorer.calls[0])
 
 
-def test_revet_replacements_must_be_corroborated(monkeypatch, tmp_path):
-    """Sweep fix #5: an unreviewed slot never gets an unreviewed text-matcher.
-
-    Round 2's replacement pool holds only an uncorroborated card, so the
-    failed round-1 replacement is KEPT (no eligible replacement) rather than
-    swapped for another zero-corpus unknown that would enter unreviewed.
-    """
+def test_reviewed_alternative_does_not_require_popularity(monkeypatch, tmp_path):
+    """A passing review is evidence even when community corpus is absent."""
     from types import SimpleNamespace
 
     import sabermetrics.reasoning.fit as fit_mod
@@ -230,9 +220,10 @@ def test_revet_replacements_must_be_corroborated(monkeypatch, tmp_path):
     )
 
     names = {a.card["name"] for a in out}
-    assert "Zero Corpus Unknown" not in names   # refused: would be unreviewed
-    assert "Corroborated Trap" in names         # kept despite failing round 2
-    assert len(_FakeScorer.calls) == 2
+    assert "Zero Corpus Unknown" in names  # independently reviewed in the menu
+    assert "Corroborated Trap" not in names
+    assert len(_FakeScorer.calls) == 1
+    assert "Zero Corpus Unknown" in _FakeScorer.calls[0]
 
 
 def test_vetoed_card_cannot_reenter_as_replacement(monkeypatch, tmp_path):
@@ -287,5 +278,7 @@ def test_vetoed_card_cannot_reenter_as_replacement(monkeypatch, tmp_path):
     )
 
     names = [a.card["name"] for a in out]
-    assert "Akroma" not in names          # rejected in round 2, stays out
+    assert "Akroma" not in names  # failed menu review, never admitted
+    assert "Filler One" in names and "Filler Two" in names
+    assert len(_FakeScorer.calls) == 1
     assert "Weak A" not in names and "Weak B" not in names

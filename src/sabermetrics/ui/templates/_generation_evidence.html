@@ -1,0 +1,257 @@
+{# Optional generation-evidence panel for deck.rationale.intelligence.
+   Renders nothing for legacy decks or non-dict payloads. Escape all values. #}
+{% set intel = deck.rationale.intelligence if (deck is defined and deck is mapping and deck.rationale is mapping and deck.rationale.intelligence is mapping) else none %}
+{% set plan = intel.plan if intel is mapping and intel.plan is mapping else {} %}
+{% set findings = intel.findings if intel is mapping and intel.findings is sequence and intel.findings is not string else [] %}
+{% set decisions = intel.decisions if intel is mapping and intel.decisions is sequence and intel.decisions is not string else [] %}
+{% set evidence = plan.evidence if plan.evidence is sequence and plan.evidence is not string else [] %}
+{% set selected_cards = decisions if decisions else evidence %}
+{% set sim = intel.simulation if intel is mapping and intel.simulation is mapping else none %}
+{% set has_plan = plan and (plan.archetype or plan.status or plan.requirements or plan.counts or plan.missing or evidence or plan.limitations) %}
+{% set has_panel = intel and (has_plan or findings or decisions or sim) %}
+
+{% macro human(value) -%}
+{%- if value is string -%}{{ value.replace('_', ' ') }}{%- elif value is not none and value is not undefined -%}{{ value }}{%- endif -%}
+{%- endmacro %}
+
+{% macro qty(value) -%}
+{%- if value is integer -%}{{ value }}{%- elif value is number -%}{{ "%.2f"|format(value) }}{%- elif value is not none and value is not undefined -%}{{ value }}{%- endif -%}
+{%- endmacro %}
+
+{% set plan_status_labels = {
+    'complete': 'Requirements met',
+    'satisfied': 'Requirements met',
+    'unavailable': 'No specialized plan',
+    'ok': 'Requirements met',
+    'partial': 'Some requirements unmet',
+    'infeasible': 'Plan could not be fulfilled',
+} %}
+
+{% if has_panel %}
+<section class="mt-6 rounded-2xl border border-line bg-panel p-5 shadow-panel"
+         aria-label="Generation evidence">
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-muted">Strategy plan</h2>
+
+    {% if has_plan %}
+    <dl class="mt-3 space-y-2 text-sm">
+        {% if plan.archetype %}
+        <div class="flex gap-2">
+            <dt class="w-36 shrink-0 font-medium text-muted">Archetype</dt>
+            <dd>{{ human(plan.archetype) }}</dd>
+        </div>
+        {% endif %}
+        {% if plan.status %}
+        <div class="flex gap-2">
+            <dt class="w-36 shrink-0 font-medium text-muted">Status</dt>
+            <dd>{{ plan_status_labels.get(plan.status|string|lower, human(plan.status)) }}</dd>
+        </div>
+        {% endif %}
+    </dl>
+
+    {% if plan.requirements is mapping and plan.requirements %}
+    <h3 class="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">Role coverage</h3>
+    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-body">
+        {% for role, required in plan.requirements.items() %}
+        {% set actual = plan.counts.get(role) if plan.counts is mapping else none %}
+        <li>
+            {{ human(role) }}:
+            {% if actual is number %}{{ qty(actual) }} of {{ qty(required) }}{% else %}{{ qty(required) }} needed{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% elif plan.counts is mapping and plan.counts %}
+    <h3 class="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">Role coverage</h3>
+    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-body">
+        {% for role, actual in plan.counts.items() %}
+        <li>{{ human(role) }}: {{ qty(actual) }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if plan.missing %}
+    <h3 class="mt-4 text-xs font-semibold uppercase tracking-wider text-amber-200">Missing requirements</h3>
+    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-body">
+        {% if plan.missing is mapping %}
+            {% for role, gap in plan.missing.items() %}
+            <li>
+                {{ human(role) }}:
+                {% if gap is mapping %}
+                    {{ qty(gap.actual) }} of {{ qty(gap.required) }} required
+                {% else %}
+                    {{ gap }}
+                {% endif %}
+            </li>
+            {% endfor %}
+        {% elif plan.missing is sequence and plan.missing is not string %}
+            {% for role in plan.missing %}
+            <li>{{ human(role) }}</li>
+            {% endfor %}
+        {% else %}
+            <li>{{ human(plan.missing) }}</li>
+        {% endif %}
+    </ul>
+    {% endif %}
+
+    {% if selected_cards %}
+    <h3 class="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">Selected cards</h3>
+    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-body">
+        {% for item in selected_cards %}
+        {% if item is mapping %}
+        <li>
+            {% if item.card %}<span class="font-medium text-body">{{ item.card }}</span>{% endif %}
+            {% if item.requirement %}<span class="text-muted"> — {{ human(item.requirement) }}</span>{% endif %}
+            {% if item.reason %}<span class="text-body/90">: {{ item.reason }}</span>{% endif %}
+        </li>
+        {% endif %}
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if plan.limitations is sequence and plan.limitations is not string and plan.limitations %}
+    <h3 class="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">Plan limits</h3>
+    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-body">
+        {% for limit in plan.limitations %}
+        <li>{{ limit }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endif %}
+
+    {% if intel.review is mapping %}
+    <p class="mt-4 text-sm text-muted">AI review covered {{ intel.review.selected_reviewed }} of {{ intel.review.eligible_selected }} eligible selections and {{ intel.review.alternatives_reviewed }} alternatives. Other cards were checked mechanically.</p>
+    {% endif %}
+    {% if findings %}
+    <details class="group mt-4 rounded-xl border border-line bg-panel2/60">
+        <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-sm font-semibold text-body [&::-webkit-details-marker]:hidden">
+            <svg class="h-4 w-4 text-muted transition-transform group-open:rotate-90" viewBox="0 0 20 20" fill="currentColor"><path d="M7 5l6 5-6 5V5z"/></svg>
+            Review notes ({{ findings|length }})
+        </summary>
+        <ul class="space-y-1 px-4 pb-3 pl-9 text-sm text-body">
+            {% for finding in findings[:20] %}
+            <li>
+                {% if finding is mapping %}
+                    {% if finding.severity %}
+                    <span class="text-xs uppercase tracking-wider text-muted">{{ human(finding.severity) }}</span>
+                    {% endif %}
+                    {% if finding.card %}<span class="font-medium">{{ finding.card }}</span>{% endif %}
+                    {% if finding.message %}<span>{{ finding.message }}</span>{% endif %}
+                {% else %}
+                    {{ finding }}
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% if findings|length > 20 %}
+        <p class="px-4 pb-3 text-xs text-muted">{{ findings|length - 20 }} more not shown</p>
+        {% endif %}
+    </details>
+    {% endif %}
+
+    {% if sim %}
+    {% set sim_status = sim.status|string|lower if sim.status is defined and sim.status else '' %}
+    {% set sim_measured = sim_status in ['measured', 'complete'] %}
+    <div class="mt-5 border-t border-line pt-4">
+        <h3 class="text-sm font-semibold uppercase tracking-wider text-muted">Simulation</h3>
+        {% if not sim_measured %}
+        <p class="mt-2 text-sm text-body">
+            {% if sim_status == 'unsupported' %}
+                This simulation scenario is not supported.
+            {% elif sim_status == 'unavailable' %}
+                Simulation was not available for this deck.
+            {% elif sim_status == 'timeout' %}
+                Simulation did not finish in time.
+            {% else %}
+                Simulation did not produce a supported measurement.
+            {% endif %}
+            {% if sim.reason %} {{ sim.reason }}{% endif %}
+        </p>
+        {% else %}
+            {% set baseline = sim.baseline if sim.baseline is mapping else none %}
+            {% if sim.scope %}
+            <p class="mt-2 text-sm text-body"><span class="font-medium text-muted">Scope:</span> {{ sim.scope }}</p>
+            {% endif %}
+            {% if baseline and baseline.assumptions is sequence and baseline.assumptions is not string and baseline.assumptions %}
+            <div class="mt-2 text-sm">
+                <p class="font-medium text-muted">Assumptions</p>
+                <ul class="mt-1 list-disc space-y-1 pl-5 text-body">
+                    {% for assumption in baseline.assumptions %}
+                    <li>{{ assumption }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            {% if baseline %}
+            <dl class="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                {% if baseline.games is number %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-muted">Games</dt>
+                    <dd>{{ qty(baseline.games) }}</dd>
+                </div>
+                {% endif %}
+                {% if baseline.turns is number %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-muted">Turn</dt>
+                    <dd>{{ qty(baseline.turns) }}</dd>
+                </div>
+                {% endif %}
+                {% if baseline.commander_cast_count is number %}
+                <div class="sm:col-span-2">
+                    <dt class="text-xs uppercase tracking-wider text-muted">Commander affordability in a land-only scenario</dt>
+                    <dd>{{ qty(baseline.commander_cast_count) }} commander casts — not a win rate</dd>
+                </div>
+                {% endif %}
+                {% if baseline.lands_mean is number %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-muted">Average lands</dt>
+                    <dd>{{ qty(baseline.lands_mean) }}</dd>
+                </div>
+                {% endif %}
+                {% if baseline.commander_draws_mean is number %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-muted">Commander cards drawn</dt>
+                    <dd>{{ qty(baseline.commander_draws_mean) }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+            {% endif %}
+            {% if sim.comparisons is sequence and sim.comparisons is not string and sim.comparisons %}
+            <h4 class="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">Comparisons</h4>
+            <p class="mt-1 text-xs text-muted">Each figure is the named metric under the scope and assumptions above, not overall deck strength.</p>
+            <ul class="mt-2 space-y-2 text-sm text-body">
+                {% for row in sim.comparisons %}
+                {% if row is mapping %}
+                <li class="rounded-lg border border-line bg-field/40 px-3 py-2">
+                    {% if row.variant is defined %}<div class="font-medium">{{ row.variant }}</div>{% endif %}
+                    {% if row.metric %}<div class="text-muted">Metric: {{ human(row.metric) }}</div>{% endif %}
+                    {% if row.delta is number %}<div>Difference: {{ qty(row.delta) }}</div>{% endif %}
+                    {% if row.interval is sequence and row.interval|length >= 2 %}
+                    <div>Sampling range: {{ qty(row.interval[0]) }} to {{ qty(row.interval[1]) }}</div>
+                    {% endif %}
+                    {% if row.improved is sameas true %}
+                    <div>{{ human(row.metric) or 'This metric' }} was higher in this comparison.</div>
+                    {% elif row.improved is sameas false %}
+                    <div>{{ human(row.metric) or 'This metric' }} did not show a clear improvement in this comparison.</div>
+                    {% endif %}
+                </li>
+                {% endif %}
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% if sim.selected_result is mapping %}
+            <p class="mt-3 text-sm text-body">Selected variant confirmation: {{ qty(sim.selected_result.commander_cast_count) }} commander casts in {{ qty(sim.selected_result.games) }} trials under this scenario. Not a win rate.</p>
+            {% endif %}
+            {% if sim.selected %}
+            <p class="mt-3 text-sm text-body"><span class="font-medium text-muted">Selected comparison:</span> {{ sim.selected }}</p>
+            {% endif %}
+            {% if sim.confirmation %}
+                {% if sim.confirmation is mapping and sim.confirmation.games is number %}
+                <p class="mt-1 text-sm text-muted">Confirmation used {{ qty(sim.confirmation.games) }} games.</p>
+                {% elif sim.confirmation is string %}
+                <p class="mt-1 text-sm text-muted">{{ sim.confirmation }}</p>
+                {% endif %}
+            {% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+{% endif %}

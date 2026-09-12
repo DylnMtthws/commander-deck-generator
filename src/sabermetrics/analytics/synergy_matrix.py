@@ -90,14 +90,9 @@ def build_synergy_matrix(
         card_id_to_index[cid] = i
         index_to_card_id[i] = cid
 
-    # Signal 1: Rule matching
+    # Signal 1: Rule matching (O(N·R) clause evals + vectorized pair combine)
     rules = _load_synergy_rules()
-    rule_matrix = np.zeros((n, n), dtype=np.float32)
-    for i in range(n):
-        for j in range(i + 1, n):
-            score = _match_rules(candidates[i], candidates[j], rules)
-            rule_matrix[i, j] = score
-            rule_matrix[j, i] = score
+    rule_matrix = build_rule_matrix(candidates, rules)
 
     # Signal 2: Embedding similarity (cross-role only)
     embedding_matrix, embeddings_ok = _compute_embedding_matrix(candidates)
@@ -111,17 +106,15 @@ def build_synergy_matrix(
                 embedding_matrix[j, i] = 0.0
 
     # Hybrid combination (rules + embeddings; weights sum to 1.0)
-    hybrid = (
-        RULE_WEIGHT * rule_matrix
-        + EMBEDDING_WEIGHT * embedding_matrix
-    )
+    hybrid = RULE_WEIGHT * rule_matrix + EMBEDDING_WEIGHT * embedding_matrix
 
     # Which signals were live (for observable degradation).
     signals = {"rules": bool(rules), "embeddings": embeddings_ok}
 
     logger.info(
         "Synergy matrix built: %dx%d, rule_max=%.3f, emb_mean=%.3f, signals=%s",
-        n, n,
+        n,
+        n,
         float(rule_matrix.max()) if n > 0 else 0,
         float(embedding_matrix.mean()) if n > 0 else 0,
         signals,
@@ -135,6 +128,79 @@ def build_synergy_matrix(
     )
 
 
+def build_rule_matrix(
+    candidates: list[dict],
+    rules: list[dict],
+) -> np.ndarray:
+    """Build the N×N rule-synergy matrix without pairwise ``_match_rules``.
+
+    Each card is evaluated against each rule's trigger and payoff clauses
+    once (O(N·R) semantic evaluations via ``_card_matches_clause``). Per-rule
+    trigger/payoff masks are then combined with vectorized numpy operations.
+    The dense output is O(N×N) float32; an N×N×R cube is never allocated.
+
+    Scores match nested ``_match_rules``: symmetric, zero diagonal, max of
+    matching rule strengths (either orientation). Missing or invalid card
+    metadata is interpreted exactly as ``_card_matches_clause`` — it is not
+    invented.
+
+    Args:
+        candidates: Card dicts with the clause fields ``_card_matches_clause``
+            reads (``oracle_text``, ``type_line``, ``keywords``, ``cmc``).
+        rules: Rule dicts with ``trigger``, ``payoff``, and optional
+            ``strength`` (default 0.5).
+
+    Returns:
+        N×N float32 matrix of max matching rule strengths.
+    """
+    n = len(candidates)
+    matrix = np.zeros((n, n), dtype=np.float32)
+    if n < 2:
+        return matrix
+
+    n_rules = len(rules)
+    if n_rules == 0:
+        return matrix
+
+    trigger_mask = np.zeros((n, n_rules), dtype=bool)
+    payoff_mask = np.zeros((n, n_rules), dtype=bool)
+    strengths = np.empty(n_rules, dtype=np.float32)
+
+    try:
+        for r, rule in enumerate(rules):
+            trigger = rule.get("trigger", {})
+            payoff = rule.get("payoff", {})
+            strengths[r] = rule.get("strength", 0.5)
+            for i, card in enumerate(candidates):
+                trigger_mask[i, r] = _card_matches_clause(card, trigger)
+                payoff_mask[i, r] = _card_matches_clause(card, payoff)
+    except (AttributeError, TypeError, ValueError):
+        # Preserve reference short-circuit behavior for malformed metadata;
+        # ordinary prepared cards take only the vectorized path.
+        for i in range(n):
+            for j in range(i + 1, n):
+                matrix[i, j] = matrix[j, i] = _match_rules(
+                    candidates[i], candidates[j], rules
+                )
+        return matrix
+
+    for r in range(n_rules):
+        t = trigger_mask[:, r]
+        p = payoff_mask[:, r]
+        if not t.any() or not p.any():
+            continue
+        matched = np.logical_and.outer(t, p)
+        matched |= np.logical_and.outer(p, t)
+        # Unlike multiplying a mask, where= cannot turn an unmatched pair
+        # into NaN when the rule strength is infinite. Python's reference
+        # max(0, nan) retains zero, so a NaN rule contributes nothing.
+        if not np.isnan(strengths[r]):
+            np.maximum(matrix, strengths[r], out=matrix, where=matched)
+
+    np.fill_diagonal(matrix, np.float32(0.0))
+    return matrix
+
+
 def _load_synergy_rules() -> list[dict]:
     """Load and parse config/synergy_rules.yaml."""
     rules_path = config_path("synergy_rules.yaml")
@@ -144,7 +210,9 @@ def _load_synergy_rules() -> list[dict]:
 
 
 def _match_rules(
-    card_a: dict, card_b: dict, rules: list[dict],
+    card_a: dict,
+    card_b: dict,
+    rules: list[dict],
 ) -> float:
     """Check if card pair matches any synergy rules. Returns max strength."""
     max_strength = 0.0
@@ -158,7 +226,9 @@ def _match_rules(
 
 
 def _single_rule_match(
-    trigger_card: dict, payoff_card: dict, rule: dict,
+    trigger_card: dict,
+    payoff_card: dict,
+    rule: dict,
 ) -> float:
     """Check if trigger_card matches rule trigger and payoff_card matches payoff.
 
@@ -254,8 +324,7 @@ def _compute_embedding_matrix(candidates: list[dict]) -> tuple[np.ndarray, bool]
         return np.zeros((0, 0), dtype=np.float32), True
 
     texts = [
-        (c.get("oracle_text") or c.get("name") or "unknown card")
-        for c in candidates
+        (c.get("oracle_text") or c.get("name") or "unknown card") for c in candidates
     ]
 
     try:
