@@ -67,9 +67,10 @@ def ledger_review_cost(reported_cost: float, review_failed: bool) -> float:
     """Map a review cost onto the spend ledger.
 
     A negative sentinel (historically -1.0 on vet failure) must never
-    subtract dollars. Failed reviews contribute 0.0 and are warned.
+    subtract dollars. Consumed calls remain charged even when review fails.
     """
-    if review_failed or reported_cost < 0:
+    del review_failed
+    if not math.isfinite(reported_cost) or reported_cost < 0:
         return 0.0
     return float(reported_cost)
 

@@ -230,6 +230,7 @@ def _engine_fact_lines(facts: list[CardFact], commander: str | None) -> list[str
         facts,
         key=lambda fact: (
             0 if fact.name == commander else 1,
+            0 if "as a copy of" in _printed_oracle(fact).lower() else 1,
             0 if _printed_oracle(fact) else 1,
             fact.name,
         ),
@@ -291,9 +292,9 @@ def _play_with_bracket(play: str, bracket: int, bracket_reasoning: str) -> str:
     text = play.rstrip()
     if text and not text.endswith("."):
         text += "."
-    note = (bracket_reasoning or "").strip()
+    note = (bracket_reasoning or "").strip().rstrip(".")
     if note:
-        return f"{text} Reported bracket {bracket}: {note}."
+        return f"{text} Estimated bracket {bracket}: {note}."
     return f"{text} Reported bracket {bracket}."
 
 

@@ -485,6 +485,10 @@ class DeckBuilder:
         metrics["narrative"] = metrics["10_synthesis"]
 
         # Acceptance after narrative so missing-signal warnings include it.
+        from sabermetrics.pipeline.greedy_optimizer import _count_roles
+
+        acceptance_role_counts = _count_roles(all_assignments)
+        acceptance_role_counts["land"] = actual_comp.get("land", 0)
         acceptance = evaluate_final_deck(
             assignments=all_assignments,
             commander_name=commander.name,
@@ -495,7 +499,7 @@ class DeckBuilder:
             engine=self._engine_admission,
             engine_status=engine_status,
             signals=self._signals,
-            role_counts=actual_comp,
+            role_counts=acceptance_role_counts,
             role_targets=role_targets_counts,
             review_failed=self._review_failed,
             commander_oracle=commander.oracle_text,
@@ -1699,6 +1703,7 @@ class DeckBuilder:
             referenced_mechanics=extract_referenced_mechanics(commander.oracle_text),
         )
 
+        self._emit_progress("optimize")
         # 1. Compute role targets
         role_targets = compute_role_targets(profile, template)
 
@@ -1740,7 +1745,6 @@ class DeckBuilder:
         # 4. Swap refinement (infrastructure cards eligible for swap)
         protected = getattr(self, "_protected_names", None) or set()
         protected |= set(getattr(self, "_engine_protect_names", None) or ())
-        self._emit_progress("optimize")
         all_assignments, swaps = swap_refine(
             deck=all_assignments,
             candidates=candidates,
@@ -1798,6 +1802,7 @@ class DeckBuilder:
         # ~14 picks, with corpus evidence in the prompt.
         self._emit_progress("review")
         review_started = time.time()
+        self._review_consumed_cost = 0.0
         llm_cost = 0.0
         self._review_failed = False
         try:
@@ -1823,6 +1828,7 @@ class DeckBuilder:
             logger.error("LLM safety check failed (%s)", type(e).__name__)
             self._review_failed = True
             llm_cost = 0.0
+        llm_cost = max(llm_cost, self._review_consumed_cost)
         self._trace_engine_snapshot("review", all_assignments)
 
         # Add fit reasoning for cards that lack it
@@ -2129,6 +2135,7 @@ class DeckBuilder:
 
         profile_summary = self._build_profile_summary(profile_result)
         total_cost = 0.0
+        self._review_consumed_cost = 0.0
 
         try:
             from sabermetrics.reasoning.fit import FitScorer
@@ -2136,13 +2143,20 @@ class DeckBuilder:
             scorer = FitScorer(self.db_path)
             weak_cards = [deck[i].card for i, _ in weakest]
 
-            results = scorer.score_cards_batch(
-                cards=weak_cards,
-                profile_summary=profile_summary,
-                archetype_definition=profile_result.profile.strategic_profile.primary_archetype,
-                partial_deck=[a.card for a in deck],
-                empirical_variant=getattr(self, "_empirical_variant", None),
-            )
+            try:
+                results = scorer.score_cards_batch(
+                    cards=weak_cards,
+                    profile_summary=profile_summary,
+                    archetype_definition=profile_result.profile.strategic_profile.primary_archetype,
+                    partial_deck=[a.card for a in deck],
+                    empirical_variant=getattr(self, "_empirical_variant", None),
+                )
+            finally:
+                self._review_consumed_cost += getattr(
+                    scorer, "last_batch_cost_usd", 0.0
+                )
+                if not getattr(scorer, "last_batch_complete", True):
+                    self._review_failed = True
 
             # Replace cards scored <= 3 with next-best candidate
             deck_names = {a.card.get("name", "") for a in deck}
@@ -2273,13 +2287,20 @@ class DeckBuilder:
             # call over just the swap-ins; their own replacements are
             # corroboration-ranked and accepted without a third round.
             if swap_in_idxs:
-                revet_results = scorer.score_cards_batch(
-                    cards=[deck[i].card for i in swap_in_idxs],
-                    profile_summary=profile_summary,
-                    archetype_definition=profile_result.profile.strategic_profile.primary_archetype,
-                    partial_deck=[a.card for a in deck],
-                    empirical_variant=getattr(self, "_empirical_variant", None),
-                )
+                try:
+                    revet_results = scorer.score_cards_batch(
+                        cards=[deck[i].card for i in swap_in_idxs],
+                        profile_summary=profile_summary,
+                        archetype_definition=profile_result.profile.strategic_profile.primary_archetype,
+                        partial_deck=[a.card for a in deck],
+                        empirical_variant=getattr(self, "_empirical_variant", None),
+                    )
+                finally:
+                    self._review_consumed_cost += getattr(
+                        scorer, "last_batch_cost_usd", 0.0
+                    )
+                    if not getattr(scorer, "last_batch_complete", True):
+                        self._review_failed = True
                 revet_scored = [
                     (deck_idx, card, fit_response)
                     for deck_idx, (card, fit_response) in zip(
@@ -2302,9 +2323,10 @@ class DeckBuilder:
                     )
 
         except Exception as e:
-            logger.warning("LLM safety net scoring failed: %s", e)
+            logger.warning("LLM safety net scoring failed (%s)", type(e).__name__)
             raise
 
+        total_cost = self._review_consumed_cost
         return deck, total_cost
 
     def _build_profile_summary(self, profile_result) -> str:

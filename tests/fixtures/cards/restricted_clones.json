@@ -1,0 +1,26 @@
+{
+  "source": "Public Scryfall-derived card catalog, reviewed 2026-09-12; no user records",
+  "cards": [
+    {
+      "id": "230b5899-460d-4506-b22d-9bb879e4437f",
+      "name": "Mockingbird",
+      "cmc": 1.0,
+      "type_line": "Creature \u2014 Bird Bard",
+      "oracle_text": "Flying\nYou may have this creature enter as a copy of any creature on the battlefield with mana value less than or equal to the amount of mana spent to cast this creature, except it's a Bird in addition to its other types and it has flying."
+    },
+    {
+      "id": "1f87120f-d2a7-4c06-aadd-3ed5729d7abf",
+      "name": "Deceptive Frostkite",
+      "cmc": 2.0,
+      "type_line": "Creature \u2014 Dragon",
+      "oracle_text": "Flying\nYou may have this creature enter as a copy of a creature you control with power 4 or greater, except it's a Dragon in addition to its other types and it has flying."
+    },
+    {
+      "id": "ad0fc934-f49d-4607-a52b-aea5c1d5d342",
+      "name": "Malleable Impostor",
+      "cmc": 4.0,
+      "type_line": "Creature \u2014 Faerie Shapeshifter",
+      "oracle_text": "Flash\nFlying\nYou may have this creature enter as a copy of a creature an opponent controls, except it's a Faerie Shapeshifter in addition to its other types and it has flying."
+    }
+  ]
+}

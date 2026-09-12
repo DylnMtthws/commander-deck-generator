@@ -34,3 +34,19 @@ Implement shared progress_callback(stage,progress) in builder and stage timing/
 counts persisted in rationale. Feed actual final oracle/type/MV facts to synthesis.
 Use synthetic fixtures/mock models for full Aang regression, plus unrelated
 commander, unaffordable engine and hostile reviewer replacements. No live model.
+
+## Independent live-review additions
+
+The public-corpus evaluation selected Mockingbird and Deceptive Frostkite as the
+minimum package. Their mana-spent and power restrictions do not establish the
+requested Aang entry engine. Protected admission must inspect the copy target
+clause, conservatively exclude unverified conditions, and favor legend-rule-safe
+copies. This policy is based on oracle clauses, not a blacklist of card names.
+Conditional copies may remain ordinary candidates but cannot satisfy the promised
+minimum package. Preserve restricted public-card regression fixtures.
+
+Missing empirical corpus must be described to the reviewer as unavailable, never
+as observed 0% inclusion. Partial review verdicts must surface a failed-review
+warning. Consumed successful-response costs remain counted even when a later
+review step fails. Final quality checks use the optimizer's overlapping role
+tags; slot labels alone must not masquerade as role coverage.

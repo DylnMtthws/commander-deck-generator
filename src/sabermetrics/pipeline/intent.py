@@ -236,6 +236,48 @@ def is_copy_on_entry_creature(card: dict) -> bool:
     return not (_TOKEN_COPY.search(oracle) and "you may have" not in oracle.lower())
 
 
+# A protected clone must copy a controlled creature without an unverified
+# power, mana-spent, creature-type, opponent-control, or other prerequisite.
+# Unknown target grammar remains eligible for ordinary scoring, but cannot
+# satisfy the guaranteed engine. These are oracle clauses, never card names.
+_UNRESTRICTED_TARGETS = frozenset(
+    {
+        "any creature on the battlefield",
+        "a creature you control",
+        "another creature you control",
+        "any other creature on the battlefield",
+        "any nonland permanent on the battlefield",
+        "a creature or planeswalker you control",
+        "any artifact or creature on the battlefield",
+        "an artifact or creature you control",
+        "target creature",
+        "any creature",
+        "another creature",
+    }
+)
+
+
+def has_verified_copy_target(card: dict) -> bool:
+    oracle = oracle_text_of(card).split("//", 1)[0].lower()
+    if "as a copy of " not in oracle:
+        return False
+    target = (
+        oracle.split("as a copy of ", 1)[1].split(", except", 1)[0].split(".", 1)[0]
+    )
+    return " ".join(target.split()) in _UNRESTRICTED_TARGETS
+
+
+def _legend_copy_priority(card: dict) -> int:
+    text = oracle_text_of(card).lower()
+    if "legend rule" in text and "doesn't apply" in text:
+        return 0
+    if "isn't legendary" in text:
+        return 1
+    if re.search(r"except (?:its|his|her) name is", text):
+        return 2
+    return 3
+
+
 def is_keyword_counter_collector(card: dict) -> bool:
     """Counter/keyword hoarders that are not copy-on-entry clones."""
     if is_copy_on_entry_creature(card):
@@ -294,6 +336,7 @@ def admit_engine_candidates(
         name = card.get("name", "")
         if not name or name in seen:
             continue
+        card = budget_by_name.get(name, card)
         if not is_copy_on_entry_creature(card):
             # Record creature-shaped counter collectors so they are not
             # silently treated as clones. Non-creatures are not engine
@@ -327,6 +370,7 @@ def admit_engine_candidates(
 
     admitted.sort(
         key=lambda c: (
+            _legend_copy_priority(c),
             mana_value_of(c) if mana_value_of(c) is not None else 99.0,
             _price(c) if _price(c) is not None else 0.0,
             c.get("name", ""),
@@ -369,6 +413,16 @@ def _classify_clone_card(
     price = _price(card)
     legendary = is_legendary(type_line_of(card))
     # Legendary is NEVER a disqualifier. Record it for inspectability.
+    if not has_verified_copy_target(card):
+        return EngineCandidateRecord(
+            name=name,
+            card_id=card.get("id"),
+            admitted=False,
+            reason="unverified copy restriction: cannot guarantee copying the controlled creature on entry",
+            mana_value=mv,
+            price_usd=price,
+            legendary=legendary,
+        )
     if mv is None:
         return EngineCandidateRecord(
             name=name,
@@ -467,7 +521,9 @@ def verify_engine_in_deck(
     matching = [
         card
         for card in deck_cards
-        if is_copy_on_entry_creature(card) and _meets_mana_value_cap(card, req)
+        if is_copy_on_entry_creature(card)
+        and has_verified_copy_target(card)
+        and _meets_mana_value_cap(card, req)
     ]
     if len(matching) >= req.min_count:
         return "satisfied"

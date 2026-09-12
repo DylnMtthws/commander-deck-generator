@@ -231,3 +231,31 @@ def test_engine_rationale_dump_is_json_safe():
     assert dumped["status"] == "satisfied"
     assert "Spark Double" in dumped["admitted"]
     assert dumped["records"]
+
+
+def test_real_restricted_copiers_cannot_fulfill_free_entry_engine():
+    import json
+    from pathlib import Path
+
+    from sabermetrics.pipeline.intent import has_verified_copy_target
+
+    cards = json.loads(
+        (Path(__file__).parent / "fixtures/cards/restricted_clones.json").read_text()
+    )["cards"]
+    cards = [{**card, "price_usd": 0.1} for card in cards]
+    assert all(is_copy_on_entry_creature(card) for card in cards)
+    assert not any(has_verified_copy_target(card) for card in cards)
+    admission = admit_engine_candidates(
+        parse_user_intent("4 mana copy creatures"), [*cards, SPARK, SAKASHIMA]
+    )
+    assert admission.selected_names == {SPARK["name"], SAKASHIMA["name"]}
+    assert verify_engine_in_deck(admission, cards) == "unsatisfied"
+    assert verify_engine_in_deck(admission, [SPARK, SAKASHIMA]) == "satisfied"
+
+
+def test_unrestricted_legend_handling_is_prioritized_over_cheap_regular_copy():
+    admission = admit_engine_candidates(
+        parse_user_intent("4 mana copy creatures"),
+        [{**GENERIC_ETB, "price_usd": 0.1, "cmc": 2}, SPARK, SAKASHIMA],
+    )
+    assert admission.selected_names == {SPARK["name"], SAKASHIMA["name"]}

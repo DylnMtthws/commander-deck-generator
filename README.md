@@ -168,7 +168,9 @@ predictor or gameplay simulator. Deck quality depends on corpus freshness,
 heuristics, and model behavior. Budget enforcement uses available price data,
 which can differ from checkout prices. No measured average generation cost or
 latency is claimed. Strategy recognition currently supports mana-value-limited
-creature copies; other free-form requests are labeled unverified. A requested
+creature copies; other free-form requests are labeled unverified. The protected
+copy package conservatively excludes target restrictions it cannot verify and
+favors copies that handle the legend rule. A requested
 power bracket is a target, not a guarantee. The historical spend check does not reserve budget atomically
 across concurrent calls, so concurrent generation may overshoot its threshold.
 

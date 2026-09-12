@@ -144,7 +144,7 @@ def test_hard_failures_for_size_singleton_color_budget():
 
 def test_ledger_review_cost_never_subtracts():
     assert ledger_review_cost(-1.0, review_failed=False) == 0.0
-    assert ledger_review_cost(0.04, review_failed=True) == 0.0
+    assert ledger_review_cost(0.04, review_failed=True) == 0.04
     assert ledger_review_cost(0.12, review_failed=False) == 0.12
 
 

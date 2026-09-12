@@ -25,6 +25,8 @@ class FitScorer:
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
+        self.last_batch_cost_usd = 0.0
+        self.last_batch_complete = True
 
     def score_cards(
         self,
@@ -83,23 +85,29 @@ class FitScorer:
                 results.append((card, fit_response))
                 logger.debug(
                     "Card %d/%d: %s → score %d",
-                    i + 1, len(cards),
-                    card.get("name", "?"), fit_response.fit_score,
+                    i + 1,
+                    len(cards),
+                    card.get("name", "?"),
+                    fit_response.fit_score,
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
+                # Isolate external model failures in the legacy per-card path.
                 logger.warning(
                     "Failed to score card %s: %s",
-                    card.get("name", "?"), e,
+                    card.get("name", "?"),
+                    e,
                 )
                 # Provide default score on failure
-                results.append((
-                    card,
-                    CardFitResponse(
-                        fit_score=5,
-                        reasoning="Scoring failed; default score assigned.",
-                        slot_role="other",
-                    ),
-                ))
+                results.append(
+                    (
+                        card,
+                        CardFitResponse(
+                            fit_score=5,
+                            reasoning="Scoring failed; default score assigned.",
+                            slot_role="other",
+                        ),
+                    )
+                )
 
         logger.info("Scored %d/%d cards successfully", len(results), len(cards))
         return results
@@ -119,7 +127,8 @@ class FitScorer:
         """Score a single card via LLM call."""
         # Format the prompt
         prompt_text = template.format(
-            archetype_definition=archetype_definition or "No specific archetype definition available.",
+            archetype_definition=archetype_definition
+            or "No specific archetype definition available.",
             relevant_rule_excerpts=relevant_rules or "No specific rule excerpts.",
             profile_summary=profile_summary,
             card_name=card.get("name", "Unknown"),
@@ -130,7 +139,8 @@ class FitScorer:
             inclusion_pct=f"{card.get('edhrec_inclusion_pct', 0) or 0:.1f}",
             cwe_score=f"{card.get('cwe_score', 'N/A')}",
             cooccurrence_avg=f"{card.get('cooccurrence_avg', 0) or 0:.2f}",
-            deck_composition_context=deck_composition_context or "No deck context available yet.",
+            deck_composition_context=deck_composition_context
+            or "No deck context available yet.",
         )
 
         # The cached section is the profile + archetype + rules (message 0)
@@ -164,7 +174,6 @@ class FitScorer:
 
         data = json.loads(response_text)
         return CardFitResponse(**data)
-
 
     def score_cards_batch(
         self,
@@ -203,23 +212,28 @@ class FitScorer:
         client = AnthropicClient.get_instance(self.db_path)
 
         deck_context = _build_deck_composition_context(partial_deck, None)
-        variant = empirical_variant or "unknown"
-
+        variant = empirical_variant
+        self.last_batch_cost_usd = 0.0
+        self.last_batch_complete = False
         card_lines = []
         for i, card in enumerate(cards):
-            rate = float(card.get("_empirical_inclusion", 0.0) or 0.0)
+            rate = card.get("_empirical_inclusion")
+            if variant is not None and isinstance(rate, (float, int)):
+                evidence = f"appears in {rate * 100:.0f}% of observed '{variant}' decks for this commander."
+            else:
+                evidence = "verified decklist inclusion data unavailable; judge from card text and deck strategy."
             card_lines.append(
                 f"{i + 1}. {card.get('name', '?')} | {card.get('mana_cost', 'N/A')} | "
                 f"{card.get('type_line', '?')} | ${card.get('price_usd', 0) or 0:.2f}\n"
                 f"   Text: {(card.get('oracle_text') or 'No text')[:400]}\n"
-                f"   Evidence: appears in {rate * 100:.0f}% of real "
-                f"'{variant}' decks for this commander."
+                f"   Evidence: {evidence}"
             )
 
         system = (
             "You are the final quality gate for a Commander deck generator. "
             "Score each listed card 1-10 for fit with the deck's strategy. "
-            "A card with near-zero real-deck inclusion needs a strong "
+            "Unavailable inclusion data is unknown, never zero inclusion or evidence against a card. "
+            "When a verified decklist sample IS available, a card with near-zero inclusion needs a strong "
             "text-based justification to score above 3 -- community absence "
             "is evidence, though genuinely synergistic sleepers do exist. "
             "Judge cards relative to each other and to the deck context. "
@@ -271,25 +285,30 @@ class FitScorer:
             call_type="card_fit_batch",
         )
 
+        cost = getattr(result, "cost_usd", 0.0)
+        if isinstance(cost, (int, float)):
+            self.last_batch_cost_usd = max(0.0, float(cost))
         by_name: dict[str, CardFitResponse] = {}
         text = result.content.strip()
         try:
             start, end = text.find("["), text.rfind("]")
-            items = json.loads(text[start:end + 1])
-        except Exception:
+            items = json.loads(text[start : end + 1])
+        except (json.JSONDecodeError, ValueError):
             # Truncated output loses the closing bracket and the whole-array
             # parse fails -- build9 defaulted all 47 verdicts to 5 and the
             # vet fired blanks. Salvage every complete object individually.
             import re as _re
+
             items = []
             for m in _re.finditer(r"\{[^{}]*\}", text):
                 try:
                     items.append(json.loads(m.group(0)))
-                except Exception:
-                    continue
+                except json.JSONDecodeError:
+                    logger.debug("Discarded malformed review verdict")
             logger.warning(
-                "Batch fit array parse failed; salvaged %d/%d verdicts "
-                "(tail: %r)", len(items), len(cards), text[-120:],
+                "Batch fit array parse failed; salvaged %d/%d verdicts",
+                len(items),
+                len(cards),
             )
         for item in items:
             try:
@@ -297,9 +316,12 @@ class FitScorer:
                     fit_score=max(1, min(10, int(item.get("fit_score", 5)))),
                     reasoning=str(item.get("reasoning", ""))[:500],
                 )
-            except Exception:
-                continue
+            except (ValueError, TypeError, AttributeError):
+                logger.debug("Discarded invalid review verdict")
 
+        self.last_batch_complete = all(
+            (card.get("name") or "").lower() in by_name for card in cards
+        )
         out: list[tuple[dict, CardFitResponse]] = []
         for card in cards:
             resp = by_name.get(
@@ -309,7 +331,8 @@ class FitScorer:
             out.append((card, resp))
         logger.info(
             "Batch vet: %d cards in one call, %d verdicts parsed",
-            len(cards), len(by_name),
+            len(cards),
+            len(by_name),
         )
         return out
 
