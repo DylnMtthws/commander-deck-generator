@@ -341,3 +341,48 @@ def test_mana_search_requires_held_out_confirmation_and_keeps_spells(monkeypatch
     assert calls[-2:] == [(5000, 837291), (5000, 837291)]
     assert not evidence["confirmation"]["improved"]
     assert evidence["selected"] == "baseline"
+
+
+def test_http_probe_has_one_deadline_across_discovery_and_execution(monkeypatch):
+    import asyncio
+    import time
+
+    import httpx
+
+    import sabermetrics.intelligence.simulation as sim
+
+    class SlowClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url):
+            await asyncio.sleep(0.03)
+            return httpx.Response(
+                200,
+                request=httpx.Request("GET", url),
+                json={
+                    "resource_probe": {"enabled": True, "request_schema": sim.VERSION}
+                },
+            )
+
+        async def post(self, url, **kwargs):
+            await asyncio.sleep(1)
+            raise AssertionError("deadline should cancel response")
+
+    monkeypatch.setattr(sim.httpx, "AsyncClient", SlowClient)
+    monkeypatch.delenv("SABER_RESOURCE_PROBE_BIN", raising=False)
+    monkeypatch.setenv("SABER_RESOURCE_PROBE_URL", "https://sim.invalid")
+    start = time.monotonic()
+    r = sim.run_probe(
+        [card("Forest", types="Basic Land — Forest")] * 99,
+        card("Commander", mana_cost="{G}"),
+        timeout=0.06,
+    )
+    assert time.monotonic() - start < 0.5
+    assert r["status"] == "unavailable"

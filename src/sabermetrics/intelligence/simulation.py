@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -103,6 +104,38 @@ def compile_request(
     }
 
 
+async def _remote_probe(url: str, request: dict, timeout: float) -> dict | None:
+    """One wall-clock budget covers discovery, connection and response reading.
+
+    HTTP phase timeouts alone are insufficient: several individually timely
+    responses can otherwise exceed the caller's total comparison deadline.
+    The synchronous generation worker owns this short-lived event loop.
+    """
+    headers = {}
+    token = os.getenv("SABER_RESOURCE_PROBE_TOKEN")
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    async with asyncio.timeout(timeout):
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=False, trust_env=False
+        ) as client:
+            caps = await client.get(url.rstrip("/") + "/capabilities")
+            caps.raise_for_status()
+            capability = caps.json().get("resource_probe", {})
+            if (
+                not capability.get("enabled")
+                or capability.get("request_schema") != VERSION
+            ):
+                return None
+            response = await client.post(
+                url.rstrip("/") + "/resource-simulate", json=request, headers=headers
+            )
+            response.raise_for_status()
+            if len(response.content) > 1_000_000:
+                raise ValueError("oversize result")
+            return response.json()
+
+
 def run_probe(
     cards: list[dict],
     commander: dict,
@@ -139,33 +172,13 @@ def run_probe(
                     raise ValueError("oversize result")
                 payload = json.loads(result.stdout)
         else:
-            headers = {}
-            token = os.getenv("SABER_RESOURCE_PROBE_TOKEN")
-            if token:
-                headers["Authorization"] = "Bearer " + token
-            with httpx.Client(
-                timeout=timeout, follow_redirects=False, trust_env=False
-            ) as client:
-                caps = client.get(url.rstrip("/") + "/capabilities")
-                caps.raise_for_status()
-                capability = caps.json().get("resource_probe", {})
-                if (
-                    not capability.get("enabled")
-                    or capability.get("request_schema") != VERSION
-                ):
-                    return {
-                        "status": "unsupported",
-                        "reason": "Resource scenario is not enabled by simulator capabilities.",
-                    }
-                response = client.post(
-                    url.rstrip("/") + "/resource-simulate",
-                    json=request,
-                    headers=headers,
-                )
-                response.raise_for_status()
-                if len(response.content) > 1_000_000:
-                    raise ValueError("oversize result")
-                payload = response.json()
+            payload = asyncio.run(_remote_probe(url, request, timeout))
+            if payload is None:
+                return {
+                    "status": "unsupported",
+                    "reason": "Resource scenario is not enabled by simulator capabilities.",
+                }
+
         if (
             not isinstance(payload, dict)
             or payload.get("schema_version") != "resource-probe-result.v1"
@@ -209,6 +222,7 @@ def run_probe(
         KeyError,
         TypeError,
         AttributeError,
+        TimeoutError,
     ):
         return {
             "status": "unavailable",

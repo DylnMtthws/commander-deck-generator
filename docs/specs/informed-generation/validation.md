@@ -5,11 +5,14 @@ not the full multiplayer search system described as the longer-term goal.
 
 ## Engineering evidence
 
-- Generator: 978 tests passed, 20 corpus/environment-dependent skips; includes
+- Generator: 979 tests passed, 20 corpus/environment-dependent skips; includes
   native C++ adapter validation. Existing sklearn fixture warnings remain.
 - Simulator: all 130 C++ tests passed under ASAN; 55 Python service tests passed,
   including existing routes, resource authorization, malformed compiled input,
   shared capacity, timeout and recovery.
+- The remote adapter enforces one wall-clock deadline across capability discovery
+  and execution. A regression test cancels a delayed response. Cache setup is
+  serialized across local service instances to avoid first-open WAL races.
 - Offline installed-container smoke passed: packaged templates/prompts/scoring,
   routes, owner login, exclusion of other accounts, session revocation, empty
   corpus and repeatable preparation. No network or production mounts.

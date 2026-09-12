@@ -31,6 +31,7 @@ VECTOR_DTYPE_NAME = "float32"
 VECTOR_FORMAT = "raw_f32"
 _MAX_CACHE_DIAGNOSTICS = 3
 _UNPINNED_REVISION = ""
+_CACHE_SETUP_LOCK = threading.Lock()
 
 _CACHE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS prepared_embeddings (
@@ -209,13 +210,17 @@ class EmbeddingService:
             return
         conn: sqlite3.Connection | None = None
         try:
-            self._cache_path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(self._cache_path), timeout=0.2)
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=200")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute(_CACHE_SCHEMA)
-            conn.execute(_CACHE_META_SCHEMA)
+            # Serialize first-time WAL/schema setup across service instances.
+            # Data operations still use SQLite transactions and bounded waits.
+            with _CACHE_SETUP_LOCK:
+                self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+                conn = sqlite3.connect(str(self._cache_path), timeout=0.2)
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA busy_timeout=200")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute(_CACHE_SCHEMA)
+                conn.execute(_CACHE_META_SCHEMA)
+
         except (OSError, sqlite3.Error, ValueError, TypeError) as e:
             self._note_cache_error("embedding cache unavailable (%s)", type(e).__name__)
             self._cache_path = None  # avoid repeated timeout cost for this worker
