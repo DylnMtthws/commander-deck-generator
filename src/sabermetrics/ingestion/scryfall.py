@@ -5,6 +5,7 @@ card_prices tables. Handles double-faced cards, missing prices, and
 idempotent re-runs via INSERT OR REPLACE.
 """
 
+import gzip
 import json
 import logging
 import re
@@ -120,7 +121,10 @@ class ScryfallIngestion(SourceHealthMixin):
         data = resp.json()
         for entry in data.get("data", []):
             if entry.get("type") == "default_cards":
-                return entry["download_uri"]
+                url = entry.get("jsonl_download_uri") or entry.get("download_uri")
+                if not url:
+                    raise FatalError("Scryfall bulk entry has no download URL")
+                return url
 
         raise FatalError("Could not find 'default_cards' bulk dataset in Scryfall API")
 
@@ -142,7 +146,9 @@ class ScryfallIngestion(SourceHealthMixin):
                     mode="wb", suffix=".json", delete=False
                 ) as tmp:
                     tmp_path = Path(tmp.name)
-                    with httpx.stream("GET", url, timeout=300, follow_redirects=True) as resp:
+                    with httpx.stream(
+                        "GET", url, timeout=300, follow_redirects=True
+                    ) as resp:
                         resp.raise_for_status()
                         total = int(resp.headers.get("content-length", 0))
                         downloaded = 0
@@ -158,9 +164,16 @@ class ScryfallIngestion(SourceHealthMixin):
                                 )
 
                 # Parse the JSON file
-                logger.info("Parsing bulk data file (%d MB)", tmp_path.stat().st_size // (1024 * 1024))
-                with open(tmp_path) as f:
-                    cards = json.load(f)
+                logger.info(
+                    "Parsing bulk data file (%d MB)",
+                    tmp_path.stat().st_size // (1024 * 1024),
+                )
+                opener = gzip.open if url.split("?", 1)[0].endswith(".gz") else open
+                with opener(tmp_path, "rt", encoding="utf-8") as f:
+                    if ".jsonl" in url.split("?", 1)[0]:
+                        cards = [json.loads(line) for line in f if line.strip()]
+                    else:
+                        cards = json.load(f)
 
                 # Clean up temp file
                 tmp_path.unlink(missing_ok=True)
@@ -171,14 +184,18 @@ class ScryfallIngestion(SourceHealthMixin):
             except (httpx.HTTPError, json.JSONDecodeError) as e:
                 tmp_path.unlink(missing_ok=True)
                 if isinstance(e, json.JSONDecodeError):
-                    raise FatalError(f"Corrupted bulk download (JSON parse error): {e}") from e
+                    raise FatalError(
+                        f"Corrupted bulk download (JSON parse error): {e}"
+                    ) from e
                 if attempt == retries - 1:
                     raise NetworkError(
                         f"Failed to download bulk data after {retries} attempts: {e}"
                     ) from e
                 logger.warning("Download attempt %d failed: %s", attempt + 1, e)
 
-        raise NetworkError("Failed to download bulk data")  # unreachable but satisfies type checker
+        raise NetworkError(
+            "Failed to download bulk data"
+        )  # unreachable but satisfies type checker
 
     def _ingest_cards(
         self, cards_data: list[dict[str, Any]]
@@ -286,9 +303,7 @@ class ScryfallIngestion(SourceHealthMixin):
             mana_cost = raw.get("mana_cost")
 
         if card_faces and not raw.get("type_line"):
-            type_line = " // ".join(
-                face.get("type_line", "") for face in card_faces
-            )
+            type_line = " // ".join(face.get("type_line", "") for face in card_faces)
         else:
             type_line = raw.get("type_line", "")
 
@@ -311,9 +326,7 @@ class ScryfallIngestion(SourceHealthMixin):
             )
             can_be_commander_text = bool(
                 oracle_text
-                and re.search(
-                    r"can be your commander", oracle_text, re.IGNORECASE
-                )
+                and re.search(r"can be your commander", oracle_text, re.IGNORECASE)
             )
             is_legal_commander = (
                 is_legendary_creature
