@@ -12,6 +12,7 @@ Endpoints:
 
 import json
 import logging
+import math
 import sqlite3
 import uuid
 from pathlib import Path
@@ -532,6 +533,9 @@ def generate_deck():
         power = int(request.form.get("power", 3))
     except (TypeError, ValueError):
         return _generation_blocked(is_ajax, "Invalid budget or power.", 400)
+
+    if not math.isfinite(budget) or budget <= 0 or not 1 <= power <= 5:
+        return _generation_blocked(is_ajax, "Budget must be positive and power must be from 1 to 5.", 400)
 
     if not commander_id:
         if is_ajax:

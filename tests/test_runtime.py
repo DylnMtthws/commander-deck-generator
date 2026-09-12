@@ -47,7 +47,9 @@ def _copy_required_config(dest: Path) -> None:
 # --- config_path ---------------------------------------------------------
 
 
-def test_config_path_returns_real_settings_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_path_returns_real_settings_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Packaged settings.yaml is used even when cwd has a decoy config/."""
     decoy = tmp_path / "config"
     decoy.mkdir()
@@ -78,7 +80,9 @@ def test_config_path_rejects_traversal() -> None:
         config_path("")
 
 
-def test_saber_config_dir_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_saber_config_dir_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _copy_required_config(tmp_path)
     patched = yaml.safe_load((tmp_path / "settings.yaml").read_text())
     patched["user"]["default_budget_usd"] = 42
@@ -99,7 +103,9 @@ def test_saber_config_dir_missing_required_file(
         config_path("synergy_rules.yaml")
 
 
-def test_installed_scoring_loaders_real_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_installed_scoring_loaders_real_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SABER_CONFIG_DIR", raising=False)
     values = assert_installed_scoring_values()
@@ -154,7 +160,9 @@ def test_fresh_setup_has_required_columns(tmp_path: Path) -> None:
     try:
         card_cols = {row[1] for row in conn.execute("PRAGMA table_info(cards)")}
         deck_cols = {row[1] for row in conn.execute("PRAGMA table_info(decks)")}
-        ramp_cols = {row[1] for row in conn.execute("PRAGMA table_info(ramp_candidates)")}
+        ramp_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(ramp_candidates)")
+        }
         versions = {
             row[0] for row in conn.execute("SELECT version FROM _schema_version")
         }
@@ -184,8 +192,7 @@ def test_repeated_migration_is_idempotent(tmp_path: Path) -> None:
 def _build_legacy_v1_db(path: Path) -> None:
     """Pre-1.1.0 schema: original tables without role_tags / popularity_rank / produced_colors."""
     conn = sqlite3.connect(str(path))
-    conn.executescript(
-        """
+    conn.executescript("""
         CREATE TABLE cards (
             id TEXT PRIMARY KEY,
             oracle_id TEXT NOT NULL,
@@ -327,8 +334,7 @@ def _build_legacy_v1_db(path: Path) -> None:
             VALUES ('g1', 'Legacy Keep Card', 'filter', 'kept');
         INSERT INTO ramp_candidates (card_id, ramp_type, ramp_score, detection_version)
             VALUES ('keep-card', 'rock', 0.5, '0.0.0');
-        """
-    )
+        """)
     conn.commit()
     conn.close()
 
@@ -342,7 +348,9 @@ def test_old_schema_upgrade_preserves_records(tmp_path: Path) -> None:
     try:
         card_cols = {row[1] for row in conn.execute("PRAGMA table_info(cards)")}
         deck_cols = {row[1] for row in conn.execute("PRAGMA table_info(decks)")}
-        ramp_cols = {row[1] for row in conn.execute("PRAGMA table_info(ramp_candidates)")}
+        ramp_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(ramp_candidates)")
+        }
         assert "role_tags" in card_cols
         assert "functional_categories" in card_cols
         assert "popularity_rank" in deck_cols
@@ -351,26 +359,35 @@ def test_old_schema_upgrade_preserves_records(tmp_path: Path) -> None:
         assert conn.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0] == (
             "owner@example.com"
         )
-        assert conn.execute("SELECT name FROM cards WHERE id='keep-card'").fetchone()[0] == (
-            "Legacy Keep Card"
+        assert conn.execute("SELECT name FROM cards WHERE id='keep-card'").fetchone()[
+            0
+        ] == ("Legacy Keep Card")
+        assert (
+            conn.execute(
+                "SELECT price_usd FROM card_prices WHERE card_id='keep-card'"
+            ).fetchone()[0]
+            == 0.25
         )
         assert conn.execute(
-            "SELECT price_usd FROM card_prices WHERE card_id='keep-card'"
-        ).fetchone()[0] == 0.25
-        assert conn.execute("SELECT deck_name FROM decks WHERE id='keep-deck'").fetchone()[0] == (
-            "Legacy Deck"
-        )
+            "SELECT deck_name FROM decks WHERE id='keep-deck'"
+        ).fetchone()[0] == ("Legacy Deck")
         rationale = conn.execute(
             "SELECT rationale FROM generated_decks WHERE id='gd1'"
         ).fetchone()[0]
         assert "keep me" in rationale
-        assert conn.execute(
-            "SELECT profile_json FROM commander_profiles WHERE commander_id='keep-card'"
-        ).fetchone()[0] == '{"identity": "legacy"}'
+        assert (
+            conn.execute(
+                "SELECT profile_json FROM commander_profiles WHERE commander_id='keep-card'"
+            ).fetchone()[0]
+            == '{"identity": "legacy"}'
+        )
         assert conn.execute("SELECT cost_usd FROM cost_log").fetchone()[0] == 0.01
-        assert conn.execute(
-            "SELECT action FROM generation_traces WHERE generation_id='g1'"
-        ).fetchone()[0] == "kept"
+        assert (
+            conn.execute(
+                "SELECT action FROM generation_traces WHERE generation_id='g1'"
+            ).fetchone()[0]
+            == "kept"
+        )
         versions = {
             row[0] for row in conn.execute("SELECT version FROM _schema_version")
         }
@@ -423,7 +440,9 @@ def test_prepare_public_corpus_tags_and_detects_synthetic_cards(tmp_path: Path) 
     assert again["ramp_candidates"].get("skipped") is True
 
 
-def test_smoke_scoring_and_schema_helper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_smoke_scoring_and_schema_helper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The installed-smoke helper runs against a temp DB (no /data required)."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SABER_CONFIG_DIR", raising=False)
@@ -445,7 +464,9 @@ def test_smoke_scoring_and_schema_helper(tmp_path: Path, monkeypatch: pytest.Mon
     apply_schema_migrations(db_path)
     conn = sqlite3.connect(str(db_path))
     try:
-        assert conn.execute("SELECT email FROM users").fetchone()[0] == "owner@example.com"
+        assert (
+            conn.execute("SELECT email FROM users").fetchone()[0] == "owner@example.com"
+        )
     finally:
         conn.close()
 
@@ -456,3 +477,16 @@ def test_scripts_setup_db_reexports_setup_database(tmp_path: Path) -> None:
     db_path = tmp_path / "from-script.db"
     script_setup(db_path, quiet=True)
     assert db_path.exists()
+
+
+def test_readiness_reports_legacy_query_errors(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy-columns.db"
+    with sqlite3.connect(path) as conn:
+        conn.execute("CREATE TABLE decks (id TEXT)")
+    report = check_readiness(path)
+    assert not report.ok
+    assert any("popularity_rank" in error for error in report.errors)
+    with pytest.raises(ReadinessError):
+        assert_readiness(path)

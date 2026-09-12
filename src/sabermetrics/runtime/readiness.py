@@ -127,7 +127,9 @@ def _check_schema_and_corpus(db_path: Path, report: ReadinessReport) -> None:
     )
 
     if not db_path.exists():
-        report.warnings.append(f"Database not found at {db_path} (optional until created)")
+        report.warnings.append(
+            f"Database not found at {db_path} (optional until created)"
+        )
         return
 
     conn = sqlite3.connect(str(db_path))
@@ -139,8 +141,14 @@ def _check_schema_and_corpus(db_path: Path, report: ReadinessReport) -> None:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
         }
-        required_tables = ("cards", "decks", "ramp_candidates", "removal_candidates",
-                           "protection_candidates", "_schema_version")
+        required_tables = (
+            "cards",
+            "decks",
+            "ramp_candidates",
+            "removal_candidates",
+            "protection_candidates",
+            "_schema_version",
+        )
         for table in required_tables:
             if table not in tables:
                 report.errors.append(f"Required table {table!r} is missing")
@@ -151,7 +159,9 @@ def _check_schema_and_corpus(db_path: Path, report: ReadinessReport) -> None:
             existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
             for col_name, _col_type in cols:
                 if col_name not in existing:
-                    report.errors.append(f"Required column {table}.{col_name} is missing")
+                    report.errors.append(
+                        f"Required column {table}.{col_name} is missing"
+                    )
 
         require_columns("cards", CARD_COLUMN_MIGRATIONS)
         require_columns("decks", DECK_COLUMN_MIGRATIONS)
@@ -169,9 +179,7 @@ def _check_schema_and_corpus(db_path: Path, report: ReadinessReport) -> None:
                 ).fetchone()[0]
         if "decks" in tables:
             # Empty historical deck corpus must be a zero-row result, not a SQL error.
-            deck_count = conn.execute(
-                "SELECT COUNT(*) FROM decks"
-            ).fetchone()[0]
+            deck_count = conn.execute("SELECT COUNT(*) FROM decks").fetchone()[0]
             conn.execute(
                 "SELECT id, popularity_rank, archetype_tags FROM decks "
                 "ORDER BY popularity_rank LIMIT 1"
@@ -184,6 +192,10 @@ def _check_schema_and_corpus(db_path: Path, report: ReadinessReport) -> None:
         }
         if card_count == 0:
             report.warnings.append("Optional card corpus is empty")
+        if card_count and tagged < card_count:
+            report.warnings.append(
+                "Public card role tags need preparation; run setup_db.py --prepare-corpus"
+            )
         if deck_count == 0:
             report.warnings.append("Optional historical deck corpus is empty")
         if report.schema_version is None and "cards" in tables:
@@ -197,7 +209,10 @@ def check_readiness(db_path: Path | str | None = None) -> ReadinessReport:
     report = ReadinessReport(ok=True)
     _check_required_config(report)
     if db_path is not None:
-        _check_schema_and_corpus(Path(db_path), report)
+        try:
+            _check_schema_and_corpus(Path(db_path), report)
+        except sqlite3.Error as exc:
+            report.errors.append(f"Database readiness query failed: {exc}")
     report.ok = not report.errors
     return report
 

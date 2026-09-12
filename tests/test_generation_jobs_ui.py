@@ -401,3 +401,14 @@ def test_create_app_does_not_start_worker_during_pytest(app) -> None:
     manager = app.extensions["generation_jobs"]
     assert manager.is_leader is False
     assert manager._worker_thread is None
+
+
+@pytest.mark.parametrize("budget,power", [("nan", "3"), ("inf", "3"), ("-1", "3"), ("100", "6")])
+def test_invalid_constraints_do_not_enqueue(app, db_path, budget, power):
+    uid = _user(db_path)
+    client = app.test_client()
+    _login(client, uid)
+    response = client.post("/generate-deck", data={"commander_id": "cmdx", "budget": budget, "power": power}, headers=XHR)
+    assert response.status_code == 400
+    with db.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM generation_jobs").fetchone()[0] == 0

@@ -36,18 +36,18 @@ import logging
 import sqlite3
 import time
 import uuid
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from sabermetrics.errors import FatalError
 from sabermetrics.models.card import Card
-from sabermetrics.pipeline.trace import GenerationTracer
 from sabermetrics.models.deck import (
-    CVARWeights,
     CardSubScores,
     ComponentCounts,
+    CVARWeights,
     DeckCard,
     DeckClassification,
     DeckComposition,
@@ -57,6 +57,7 @@ from sabermetrics.models.deck import (
     GenerationMeta,
     LLMFit,
 )
+from sabermetrics.pipeline.trace import GenerationTracer
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ class DeckBuildRequest(BaseModel):
     """Request for deck generation."""
 
     commander_id: str
-    budget_usd: float = 200.0
+    budget_usd: float = Field(default=200.0, gt=0, allow_inf_nan=False)
     power_target: int = Field(default=3, ge=1, le=5)
     strategy: str | None = None
     weights: CVARWeights | None = None
@@ -102,6 +103,7 @@ class DeckBuildResult(BaseModel):
     total_cost_usd: float
     total_time_seconds: float
     pipeline_metrics: dict
+    quality_warnings: list[dict] = Field(default_factory=list)
 
 
 def _tokenize_engine_traits(raw_traits: list[str]) -> list[str]:
@@ -120,7 +122,14 @@ def _tokenize_engine_traits(raw_traits: list[str]) -> list[str]:
     from sabermetrics.analytics.oracle_keywords import MTG_KEYWORD_ABILITIES
 
     tokens: set[str] = set()
-    type_keywords = {"wall", "artifact", "enchantment", "creature", "instant", "sorcery"}
+    type_keywords = {
+        "wall",
+        "artifact",
+        "enchantment",
+        "creature",
+        "instant",
+        "sorcery",
+    }
     for trait in raw_traits:
         trait_lower = trait.lower()
         for kw in MTG_KEYWORD_ABILITIES:
@@ -132,11 +141,43 @@ def _tokenize_engine_traits(raw_traits: list[str]) -> list[str]:
     return sorted(tokens)
 
 
+# Shared progress stages (jobs UI consumes these names). Completion is
+# emitted only after persistence, never on a timer.
+_PROGRESS_STAGES: dict[str, int] = {
+    "validate": 5,
+    "profile": 12,
+    "filter": 22,
+    "score": 35,
+    "template": 42,
+    "infrastructure": 55,
+    "optimize": 70,
+    "review": 82,
+    "narrative": 90,
+    "persist": 96,
+    "completed": 100,
+}
+
+
 class DeckBuilder:
     """Orchestrates end-to-end deck generation."""
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        progress_callback: Callable[[str, int], None] | None = None,
+    ) -> None:
         self.db_path = db_path
+        self._progress_callback = progress_callback
+
+    def _emit_progress(self, stage: str) -> None:
+        """Report a real pipeline stage. Progress is stage-boundary, not time."""
+        progress = _PROGRESS_STAGES.get(stage)
+        if progress is None:
+            return
+        callback = getattr(self, "_progress_callback", None)
+        if callback is None:
+            return
+        callback(stage, progress)
 
     def build(self, request: DeckBuildRequest) -> DeckBuildResult:
         """Execute the eight-stage deck building pipeline.
@@ -151,11 +192,32 @@ class DeckBuilder:
         Returns:
             DeckBuildResult with generated deck and metadata.
         """
+        from sabermetrics.pipeline.intent import (
+            admit_engine_candidates,
+            engine_rationale_dump,
+            parse_user_intent,
+            verify_engine_in_deck,
+        )
+        from sabermetrics.pipeline.quality import (
+            evaluate_final_deck,
+            ledger_review_cost,
+        )
+        from sabermetrics.runtime import assert_readiness
+
+        assert_readiness(self.db_path)
         start_time = time.time()
         metrics: dict[str, float] = {}
         total_cost = 0.0
         # Observable degradation: which signals were live for this build.
         self._signals: dict[str, bool] = {}
+        self._stage_counts: dict[str, int] = {}
+        self._quality_warnings: list[dict] = []
+        self._review_failed = False
+        self._protected_names: set[str] = set()
+        self._engine_protect_names: set[str] = set()
+        self._legality_backfill = 0
+        self._stage_timings: dict[str, float] = {}
+        self._engine_rationale = None
 
         # --- Build trace watchlist and create tracer ---
         watchlist: set[str] = set()
@@ -164,62 +226,125 @@ class DeckBuilder:
         # Add all auto-include card names
         try:
             from sabermetrics.pipeline.generators.ramp import _load_auto_includes
+
             auto_inc, _ = _load_auto_includes()
             for section_entries in auto_inc.values():
                 if isinstance(section_entries, list):
                     for entry in section_entries:
                         watchlist.add(entry["name"])
-        except Exception:
-            pass
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            logger.warning(
+                "Optional trace or classification data unavailable (%s)",
+                type(exc).__name__,
+            )
         self._tracer = GenerationTracer(
             generation_id="pending",
             watchlist=watchlist,
         )
 
-        # --- Validate & Profile (unchanged) ---
+        # --- Validate & Profile ---
         t = time.time()
+        self._emit_progress("validate")
         commander = self._validate_request(request)
+        self._commander = commander
         metrics["1_validate"] = time.time() - t
+        metrics["validate"] = metrics["1_validate"]
 
         t = time.time()
+        self._emit_progress("profile")
         profile_result = self._acquire_profile(request, commander)
         profile = profile_result.profile
         total_cost += profile_result.generation_cost_usd
         metrics["2_profile"] = time.time() - t
+        metrics["profile"] = metrics["2_profile"]
 
         # --- Stage 1: Hard Filters + Role Tag Loading ---
         t = time.time()
+        self._emit_progress("filter")
         candidates = self._filter_candidates(request, commander)
         candidates = self._load_role_tags(candidates)
         metrics["3_filter"] = time.time() - t
+        metrics["filter"] = metrics["3_filter"]
+        self._stage_counts["candidates_after_filter"] = len(candidates)
         logger.info("Stage 1: %d candidates after hard filters", len(candidates))
+
+        # Engine admission from the legal/budget-valid FULL pool, before Pareto.
+        from sabermetrics.config import settings as _settings
+
+        per_card_ceiling = (
+            request.budget_usd * _settings.pipeline.per_card_budget_fraction
+        )
+        requirement = parse_user_intent(request.user_intent)
+        color_legal = getattr(self, "_color_legal_pool", candidates)
+        self._engine_admission = admit_engine_candidates(
+            requirement,
+            budget_valid_pool=candidates,
+            color_legal_pool=color_legal,
+            per_card_ceiling=per_card_ceiling,
+        )
+        self._engine_protect_names = set(self._engine_admission.selected_names)
+        self._protected_names |= self._engine_protect_names
+        self._tracer.watchlist.update(self._engine_protect_names)
+        self._tracer.watchlist.update(self._engine_admission.admitted_names)
+        self._trace_engine_admission()
+        self._stage_counts["engine_admitted"] = len(self._engine_admission.admitted)
+        self._stage_counts["engine_selected"] = len(self._engine_admission.selected)
 
         # --- Stage 2: Pareto Filter ---
         t = time.time()
+        self._emit_progress("score")
         candidates = self._structural_score(
             candidates, commander, request, profile_result
         )
+        metrics["score"] = time.time() - t
         candidates = self._pareto_filter(candidates)
         metrics["4_pareto"] = time.time() - t
+        self._stage_counts["candidates_after_pareto"] = len(candidates)
         logger.info("Stage 2: %d candidates after Pareto filter", len(candidates))
+        self._trace_engine_snapshot("pareto", candidates, as_cards=True)
 
         # --- Stage 3: Template Derivation ---
         t = time.time()
+        self._emit_progress("template")
         template = self._derive_template(profile, request)
         metrics["5_template"] = time.time() - t
+        metrics["template"] = metrics["5_template"]
         logger.info(
             "Stage 3: Template derived (%d land, %d ramp, %d draw, "
             "%d removal, %d diff)",
-            template.land_count, template.ramp_count, template.draw_count,
-            template.removal_count, template.differentiator_slots,
+            template.land_count,
+            template.ramp_count,
+            template.draw_count,
+            template.removal_count,
+            template.differentiator_slots,
         )
 
-        # --- Stage 4: Infrastructure Fill ---
+        # Reserve the engine package BEFORE infrastructure so budget/slots
+        # survive later fills, swaps, review, and legality repair.
         t = time.time()
-        infrastructure, budget_used = self._fill_infrastructure(
-            candidates, commander, request, template
+        self._emit_progress("infrastructure")
+        engine_reserved = self._reserve_engine_package(
+            candidates,
+            request,
+            exclude_names=set(),
         )
+        budget_used = sum(
+            float(a.card.get("price_usd", 0) or 0) for a in engine_reserved
+        )
+        self._protected_names |= {a.card.get("name", "") for a in engine_reserved}
+        self._stage_counts["engine_reserved"] = len(engine_reserved)
+
+        infrastructure, infra_spent = self._fill_infrastructure(
+            candidates,
+            commander,
+            request,
+            template,
+            already_placed=list(engine_reserved),
+            budget_used=budget_used,
+        )
+        budget_used = infra_spent
         metrics["6_infrastructure"] = time.time() - t
+        metrics["infrastructure"] = metrics["6_infrastructure"]
 
         # --- Stage 4.5: Reserve empirical staples the generators didn't place ---
         # After Stage 4 so it can exclude cards already placed -- reserving only
@@ -228,36 +353,61 @@ class DeckBuilder:
         # slots, so greedy (Stage 5+6) fills that many fewer (deck stays 99).
         placed_names = {a.card.get("name", "") for a in infrastructure}
         reserved = self._reserve_empirical_staples(
-            candidates, request, template, exclude_names=placed_names,
+            candidates,
+            request,
+            template,
+            exclude_names=placed_names,
         )
         infrastructure = list(reserved) + infrastructure
-        budget_used += sum(
-            float(a.card.get("price_usd", 0) or 0) for a in reserved
-        )
+        budget_used += sum(float(a.card.get("price_usd", 0) or 0) for a in reserved)
         # Don't let swap_refine trade away a card the corpus told us to keep.
         self._protected_names |= {a.card.get("name", "") for a in reserved}
         logger.info(
-            "Stage 4: %d cards placed ($%.2f), %d reserved as staples",
-            len(infrastructure), budget_used, len(reserved),
+            "Stage 4: %d cards placed ($%.2f), %d reserved as staples, "
+            "%d reserved as engine",
+            len(infrastructure),
+            budget_used,
+            len(reserved),
+            len(engine_reserved),
         )
+        self._trace_engine_snapshot("infrastructure", infrastructure)
 
         # --- Stage 5+6: Synergy optimizer (role targets + matrix + greedy + swap) ---
         t = time.time()
         all_assignments, opt_metrics = self._optimize_differentiators(
-            candidates, infrastructure, profile_result, commander,
-            request, template, budget_used, reserved_count=len(reserved),
+            candidates,
+            infrastructure,
+            profile_result,
+            commander,
+            request,
+            template,
+            budget_used,
+            reserved_count=len(reserved),
         )
-        total_cost += opt_metrics.get("llm_safety_cost", 0.0)
+        review_cost = ledger_review_cost(
+            float(opt_metrics.get("llm_safety_cost", 0.0) or 0.0),
+            bool(self._review_failed or opt_metrics.get("llm_safety_failed")),
+        )
+        total_cost += review_cost
         metrics["7_optimizer"] = time.time() - t
-        metrics.update({
-            f"opt_{k}": v for k, v in opt_metrics.items()
-            if k != "role_targets"
-        })
+        metrics["review"] = float(opt_metrics.get("review_seconds", 0))
+        metrics["optimize"] = max(0.0, metrics["7_optimizer"] - metrics["review"])
+        metrics.update(
+            {f"opt_{k}": v for k, v in opt_metrics.items() if k != "role_targets"}
+        )
+        metrics["opt_llm_safety_cost"] = review_cost
         logger.info(
             "Stage 5+6: %d total cards, %d swaps, obj=%.4f",
             len(all_assignments),
             opt_metrics.get("cards_swapped", 0),
             opt_metrics.get("objective_score", 0),
+        )
+        self._stage_counts["cards_swapped"] = int(opt_metrics.get("cards_swapped", 0))
+        self._stage_counts["type_floor_swaps"] = int(
+            opt_metrics.get("type_floor_swaps", 0)
+        )
+        self._stage_counts["rebalance_upgrades"] = int(
+            opt_metrics.get("rebalance_upgrades", 0)
         )
 
         # (Stage 7 budget rebalancing now runs inside _optimize_differentiators,
@@ -265,18 +415,21 @@ class DeckBuilder:
 
         # --- Stage 7b: Enforce Commander legality as a hard invariant ---
         all_assignments = self._enforce_legality(
-            all_assignments, commander, protected_names=self._protected_names,
+            all_assignments,
+            commander,
+            protected_names=self._protected_names,
         )
+        self._trace_engine_snapshot("legality", all_assignments)
 
         # --- Stage 8: Synthesis + Classify + Persist ---
-        t = time.time()
         self._validate_no_commander_in_99(all_assignments, commander)
         total_price = sum(
-            float(a.card.get("price_usd", 0) or 0) for a in all_assignments
+            max(0.0, float(a.card.get("price_usd", 0) or 0)) for a in all_assignments
         )
 
         # Build AssemblyResult-compatible wrapper
         from sabermetrics.pipeline.slot_assigner import AssemblyResult
+
         target_comp = template.to_composition()
         actual_comp: dict[str, int] = {}
         for a in all_assignments:
@@ -291,16 +444,81 @@ class DeckBuilder:
         )
 
         if len(all_assignments) < 99:
-            assembly.warnings.append(
-                f"Only {len(all_assignments)} cards, need 99."
-            )
+            assembly.warnings.append(f"Only {len(all_assignments)} cards, need 99.")
 
-        narrative, synth_cost = self._synthesize_narrative(
-            profile_result, assembly, request
+        engine_status = verify_engine_in_deck(
+            self._engine_admission,
+            [a.card for a in all_assignments],
         )
-        total_cost += synth_cost
+        self._engine_admission.status = engine_status
+        self._trace_engine_snapshot("final", all_assignments)
+
+        role_targets_counts = {}
+        for r, t in (opt_metrics.get("role_targets") or {}).items():
+            if hasattr(t, "target_count"):
+                role_targets_counts[r] = t.target_count
+            else:
+                try:
+                    role_targets_counts[r] = int(t)
+                except (TypeError, ValueError):
+                    continue
+        if not role_targets_counts:
+            role_targets_counts = {
+                "ramp": template.ramp_count,
+                "draw": template.draw_count,
+                "removal": template.removal_count,
+                "land": template.land_count,
+            }
 
         classification = self._classify_bracket(assembly)
+
+        t = time.time()
+        self._emit_progress("narrative")
+        narrative, synth_cost = self._synthesize_narrative(
+            profile_result,
+            assembly,
+            request,
+            classification,
+        )
+        total_cost += synth_cost
+        metrics["10_synthesis"] = time.time() - t
+        metrics["narrative"] = metrics["10_synthesis"]
+
+        # Acceptance after narrative so missing-signal warnings include it.
+        acceptance = evaluate_final_deck(
+            assignments=all_assignments,
+            commander_name=commander.name,
+            commander_colors=commander.color_identity,
+            budget_usd=request.budget_usd,
+            requested_bracket=request.power_target,
+            estimated_bracket=classification.estimated_bracket,
+            engine=self._engine_admission,
+            engine_status=engine_status,
+            signals=self._signals,
+            role_counts=actual_comp,
+            role_targets=role_targets_counts,
+            review_failed=self._review_failed,
+            commander_oracle=commander.oracle_text,
+            legality_backfill=self._legality_backfill,
+        )
+        if acceptance.failures:
+            raise FatalError(
+                "Final deck validation failed: "
+                + "; ".join(item.message for item in acceptance.failures)
+            )
+        self._quality_warnings = acceptance.as_rationale_list()
+        for item in acceptance.failures:
+            assembly.warnings.append(f"[failure:{item.code}] {item.message}")
+        for item in acceptance.warnings:
+            if item.code in {
+                "engine_unavailable",
+                "engine_unsatisfied",
+                "intent_unverified",
+                "failed_final_review",
+                "signal_unavailable",
+                "unmet_role_target",
+            }:
+                assembly.warnings.append(f"[warning:{item.code}] {item.message}")
 
         deck = self._build_deck_model(
             commander=commander,
@@ -312,6 +530,14 @@ class DeckBuilder:
             total_cost=total_cost,
             start_time=start_time,
         )
+        t = time.time()
+        self._emit_progress("persist")
+        self._stage_timings = {
+            stage: float(metrics[stage])
+            for stage in _PROGRESS_STAGES
+            if stage in metrics and stage != "completed"
+        }
+        self._engine_rationale = engine_rationale_dump(self._engine_admission)
         self._persist_deck(deck)
 
         # Flush trace events keyed to the real deck ID
@@ -319,23 +545,43 @@ class DeckBuilder:
         trace_count = self._tracer.flush(self.db_path)
         if trace_count:
             logger.info("Flushed %d trace events for deck %s", trace_count, deck.id)
-
-        metrics["10_synthesis"] = time.time() - t
+        metrics["persist"] = time.time() - t
+        self._stage_timings["persist"] = metrics["persist"]
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT rationale FROM generated_decks WHERE id = ?", (deck.id,)
+            ).fetchone()
+            rationale = json.loads(row[0])
+            rationale["stage_timings"] = self._stage_timings
+            conn.execute(
+                "UPDATE generated_decks SET rationale = ? WHERE id = ?",
+                (json.dumps(rationale), deck.id),
+            )
 
         total_time = time.time() - start_time
         logger.info(
             "Deck built for %s in %.1fs ($%.4f)",
-            commander.name, total_time, total_cost,
+            commander.name,
+            total_time,
+            total_cost,
         )
+
+        # Completion is real: persist (and trace flush) already happened.
+        self._emit_progress("completed")
 
         return DeckBuildResult(
             deck=deck,
             profile_was_generated=not profile_result.cache_hit,
             total_cost_usd=round(total_cost, 4),
             total_time_seconds=round(total_time, 2),
+            quality_warnings=list(self._quality_warnings),
             pipeline_metrics={
                 **metrics,
                 "empirical_variant": getattr(self, "_empirical_variant", None),
+                "stage_counts": dict(self._stage_counts),
+                "stage_timings": dict(getattr(self, "_stage_timings", {})),
+                "engine_status": engine_status,
+                "review_failed": self._review_failed,
             },
         )
 
@@ -361,8 +607,7 @@ class DeckBuilder:
         for a in assignments:
             card = a.card
             same = (
-                commander.oracle_id
-                and card.get("oracle_id") == commander.oracle_id
+                commander.oracle_id and card.get("oracle_id") == commander.oracle_id
             ) or card.get("name", "") == commander.name
             if same:
                 raise FatalError(
@@ -417,7 +662,7 @@ class DeckBuilder:
                 set_code=row_dict["set_code"],
                 rarity=row_dict["rarity"],
                 image_uri=row_dict.get("image_uri"),
-                last_updated=row_dict.get("last_updated", datetime.now()),
+                last_updated=row_dict.get("last_updated", datetime.now(UTC)),
                 current_price_usd=row_dict.get("current_price_usd"),
             )
         finally:
@@ -435,14 +680,23 @@ class DeckBuilder:
         return manager.generate_profile(profile_request)
 
     def _filter_candidates(self, request, commander) -> list[dict]:
-        """Stage 1: Apply hard-rule filters."""
-        from sabermetrics.analytics.filters import apply_hard_filters
+        """Stage 1: Apply hard-rule filters.
 
-        return apply_hard_filters(
+        Color/format legality is computed first so engine admission can
+        explain budget-unavailable copy creatures instead of omitting them.
+        """
+        from sabermetrics.analytics.filters import (
+            apply_hard_filters,
+            filter_by_budget,
+        )
+
+        legal = apply_hard_filters(
             db_path=self.db_path,
             commander_id=request.commander_id,
-            max_budget_usd=request.budget_usd,
+            max_budget_usd=None,
         )
+        self._color_legal_pool = legal
+        return filter_by_budget(legal, request.budget_usd)
 
     def _load_role_tags(self, candidates: list[dict]) -> list[dict]:
         """Load role_tags and functional_categories for candidates from DB."""
@@ -463,7 +717,7 @@ class DeckBuilder:
             tag_map: dict[str, tuple[str, str]] = {}
             batch_size = 500
             for i in range(0, len(card_ids), batch_size):
-                batch = card_ids[i:i + batch_size]
+                batch = card_ids[i : i + batch_size]
                 placeholders = ",".join("?" * len(batch))
                 cursor = conn.execute(
                     f"SELECT id, role_tags, functional_categories "
@@ -499,6 +753,7 @@ class DeckBuilder:
             extract_referenced_keywords,
             extract_referenced_mechanics,
         )
+
         weights = request.weights or CVARWeights()
 
         ref_keywords = extract_referenced_keywords(commander.oracle_text)
@@ -539,8 +794,7 @@ class DeckBuilder:
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
-                "SELECT top_cards FROM edhrec_commander_data "
-                "WHERE commander_id = ?",
+                "SELECT top_cards FROM edhrec_commander_data " "WHERE commander_id = ?",
                 (commander.id,),
             )
             row = cursor.fetchone()
@@ -551,7 +805,7 @@ class DeckBuilder:
                     if name and pct > 0:
                         edhrec_top_cards[name] = pct
             conn.close()
-        except Exception as e:
+        except (sqlite3.Error, ValueError, TypeError, KeyError) as e:
             logger.warning("Failed to load EDHREC data: %s", e)
 
         # EDHREC behavioral corroboration is a live signal only if this
@@ -562,6 +816,7 @@ class DeckBuilder:
         # Card Win Equity from tournament data (present only if TopDeck.gg
         # tournament data has been ingested for this commander).
         from sabermetrics.analytics.card_win_equity import load_cwe_for_commander
+
         cwe_by_card, cwe_sample_by_card = load_cwe_for_commander(
             self.db_path, commander.id
         )
@@ -576,10 +831,13 @@ class DeckBuilder:
             from sabermetrics.analytics.empirical_valuation import (
                 get_target_cluster_inclusion,
             )
+
             empirical = get_target_cluster_inclusion(
-                self.db_path, commander.id, strategy=request.strategy,
+                self.db_path,
+                commander.id,
+                strategy=request.strategy,
             )
-        except Exception as e:
+        except (sqlite3.Error, ValueError, TypeError, KeyError) as e:
             logger.warning("Empirical inclusion load failed: %s", e)
         self._empirical_variant = empirical.variant if empirical else None
         # Kept for later stages: template derivation reads the variant's
@@ -589,8 +847,11 @@ class DeckBuilder:
             logger.info(
                 "Empirical grounding active: variant='%s' from %d/%d decks, "
                 "%d cards (%d reliable)",
-                empirical.variant, empirical.variant_size, empirical.n_decks,
-                len(empirical.inclusion), len(empirical.reliable),
+                empirical.variant,
+                empirical.variant_size,
+                empirical.n_decks,
+                len(empirical.inclusion),
+                len(empirical.reliable),
             )
 
         context = ScoringContext(
@@ -629,17 +890,16 @@ class DeckBuilder:
         few_attackers = False
         if empirical is not None and empirical.composition is not None:
             comp = empirical.composition
-            engine = engine_types({
-                "enchantment": comp.enchantments,
-                "artifact": comp.artifacts,
-            })
+            engine = engine_types(
+                {
+                    "enchantment": comp.enchantments,
+                    "artifact": comp.artifacts,
+                }
+            )
             aura_engine = (
-                comp.enchantments > 0
-                and comp.auras >= 0.6 * comp.enchantments
+                comp.enchantments > 0 and comp.auras >= 0.6 * comp.enchantments
             )
-            few_attackers = (
-                comp.creatures < settings.scoring.combat_gated_creature_min
-            )
+            few_attackers = comp.creatures < settings.scoring.combat_gated_creature_min
 
         # Game-changer gate: bracket data exists (game_changers.yaml) but was
         # never consulted at selection -- Mana Vault-class fast mana has no
@@ -650,24 +910,32 @@ class DeckBuilder:
                 import yaml as _yaml
 
                 from sabermetrics.config import config_path as _config_path
-                _gc = _yaml.safe_load(
-                    _config_path("game_changers.yaml").read_text()
-                ) or {}
+
+                _gc = (
+                    _yaml.safe_load(_config_path("game_changers.yaml").read_text())
+                    or {}
+                )
                 for v in (_gc.values() if isinstance(_gc, dict) else [_gc]):
                     if isinstance(v, list):
-                        gc_names |= {str(x).lower() if not isinstance(x, dict)
-                                     else str(x.get("name", "")).lower() for x in v}
-            except Exception:
-                pass
+                        gc_names |= {
+                            (
+                                str(x).lower()
+                                if not isinstance(x, dict)
+                                else str(x.get("name", "")).lower()
+                            )
+                            for x in v
+                        }
+            except (OSError, _yaml.YAMLError, ValueError, TypeError) as exc:
+                logger.warning(
+                    "Bracket configuration unavailable (%s)", type(exc).__name__
+                )
             gc_names.discard("sol ring")  # ubiquitous at every power level
 
         for card in candidates:
             card_name_lower = (card.get("name") or "").lower()
             if card_name_lower in gc_names:
                 card["_anti_engine"] = True
-            card["edhrec_inclusion_pct"] = edhrec_top_cards.get(
-                card_name_lower, 0.0
-            )
+            card["edhrec_inclusion_pct"] = edhrec_top_cards.get(card_name_lower, 0.0)
             if empirical is not None:
                 card["_empirical_inclusion"] = empirical.rate(card_name_lower)
                 card["_empirical_reliable"] = card_name_lower in empirical.reliable
@@ -688,8 +956,8 @@ class DeckBuilder:
             if engine and is_anti_engine(card, engine):
                 card["_anti_engine"] = True
                 card["_cvar_score"] = round(
-                    card["_cvar_score"]
-                    * settings.scoring.anti_synergy_penalty, 4,
+                    card["_cvar_score"] * settings.scoring.anti_synergy_penalty,
+                    4,
                 )
             # Combat-gated payoff discount: "attack with two or more
             # creatures" class conditions (prepared/battalion/raid) rarely
@@ -701,8 +969,8 @@ class DeckBuilder:
             if few_attackers and is_combat_gated(card.get("oracle_text")):
                 card["_combat_gated"] = True
                 card["_cvar_score"] = round(
-                    card["_cvar_score"]
-                    * settings.scoring.combat_gated_discount, 4,
+                    card["_cvar_score"] * settings.scoring.combat_gated_discount,
+                    4,
                 )
 
         return candidates
@@ -728,6 +996,7 @@ class DeckBuilder:
                 continue
             for entry in section_entries:
                 auto_include_names.add(entry["name"])
+        auto_include_names |= set(getattr(self, "_engine_protect_names", None) or ())
 
         # Group by primary role
         role_groups: dict[str, list[dict]] = {}
@@ -768,13 +1037,21 @@ class DeckBuilder:
                 card_name = card.get("name", "")
                 if card_name in auto_include_names:
                     frontier.append(card)
+                    engine_hit = card_name in (
+                        getattr(self, "_engine_protect_names", set()) or set()
+                    )
                     self._tracer.record(
                         card_name=card_name,
                         stage="pareto",
                         action="protected",
                         card_id=card.get("id"),
                         score=card.get("_cvar_score"),
-                        reason="auto-include exempt",
+                        reason=(
+                            "engine package exempt from pruning"
+                            if engine_hit
+                            else "auto-include exempt"
+                        ),
+                        force=engine_hit,
                     )
                     continue
 
@@ -792,7 +1069,11 @@ class DeckBuilder:
                 for f_card in frontier:
                     f_cvar = f_card.get("_cvar_score", 0)
                     f_price = float(f_card.get("price_usd", 0) or 0)
-                    if f_cvar >= cvar and f_price <= price and (f_cvar > cvar or f_price < price):
+                    if (
+                        f_cvar >= cvar
+                        and f_price <= price
+                        and (f_cvar > cvar or f_price < price)
+                    ):
                         # Empirical protection: a card common in the target
                         # variant's real decks earns its slot outright, whatever
                         # dominates it (per-variant, sharper than EDHREC).
@@ -822,7 +1103,7 @@ class DeckBuilder:
                             card_id=card.get("id"),
                             score=cvar,
                             reason=f"empirical protected ({card_emp * 100:.0f}% "
-                                   "of variant decks)",
+                            "of variant decks)",
                         )
                     elif edhrec_saved:
                         self._tracer.record(
@@ -868,8 +1149,7 @@ class DeckBuilder:
 
         # Global floor: ensure enough non-land candidates total
         non_land_kept = [
-            c for c in kept
-            if "land" not in (c.get("type_line") or "").lower()
+            c for c in kept if "land" not in (c.get("type_line") or "").lower()
         ]
         min_non_land = max(
             settings.pipeline.structural_filter_target,
@@ -878,12 +1158,11 @@ class DeckBuilder:
         if len(non_land_kept) < min_non_land:
             # Re-add top non-land cards by CVAR
             non_land_all = [
-                c for c in candidates
+                c
+                for c in candidates
                 if "land" not in (c.get("type_line") or "").lower()
             ]
-            non_land_all.sort(
-                key=lambda c: c.get("_cvar_score", 0), reverse=True
-            )
+            non_land_all.sort(key=lambda c: c.get("_cvar_score", 0), reverse=True)
             kept_ids = {id(c) for c in kept}
             for card in non_land_all:
                 if len(non_land_kept) >= min_non_land:
@@ -895,7 +1174,9 @@ class DeckBuilder:
 
         logger.info(
             "Pareto filter: %d kept, %d removed (across %d roles)",
-            len(kept), removed, len(role_groups),
+            len(kept),
+            removed,
+            len(role_groups),
         )
         return kept
 
@@ -922,8 +1203,156 @@ class DeckBuilder:
             empirical_composition=composition,
         )
 
+    def _trace_engine_admission(self) -> None:
+        """Record every engine-shaped card at admission, including misses."""
+        admission = getattr(self, "_engine_admission", None)
+        if admission is None:
+            return
+        if admission.requirement.kind == "none":
+            return
+        if not admission.records and admission.requirement.kind == "unsupported":
+            self._tracer.record(
+                card_name="(intent)",
+                stage="engine_admission",
+                action="unverified",
+                reason=(
+                    "unsupported intent is unverified, not silently fulfilled: "
+                    f"{admission.requirement.raw_intent!r}"
+                ),
+                force=True,
+            )
+            return
+        for rec in admission.records:
+            self._tracer.record(
+                card_name=rec.name,
+                stage="engine_admission",
+                action="admitted" if rec.admitted else "unavailable",
+                card_id=rec.card_id,
+                score=rec.mana_value,
+                reason=rec.reason,
+                force=True,
+            )
+
+    def _trace_engine_snapshot(
+        self,
+        stage: str,
+        items: list,
+        *,
+        as_cards: bool = False,
+    ) -> None:
+        """Trace whether reserved engine cards are still present."""
+        names = getattr(self, "_engine_protect_names", None) or set()
+        if not names:
+            return
+        present: set[str] = set()
+        for item in items:
+            card = item if as_cards else getattr(item, "card", item)
+            if isinstance(card, dict):
+                present.add(card.get("name", ""))
+        for name in sorted(names):
+            in_deck = name in present
+            self._tracer.record(
+                card_name=name,
+                stage=stage,
+                action="present" if in_deck else "missing",
+                reason=(
+                    "engine package still present"
+                    if in_deck
+                    else "engine package card missing after this stage"
+                ),
+                force=True,
+            )
+
+    def _reserve_engine_package(
+        self,
+        candidates,
+        request,
+        exclude_names=None,
+    ) -> list:
+        """Place the feasible clone package before infrastructure fill.
+
+        Hard budget still applies: a card that would overspend is skipped and
+        traced, never forced in. Selected names are already on the protected
+        set so later swaps/review/legality cannot quietly drop them.
+        """
+        from sabermetrics.pipeline.slot_assigner import SlotAssignment
+
+        admission = getattr(self, "_engine_admission", None)
+        if admission is None or not admission.selected:
+            return []
+        already = set(exclude_names or set())
+        by_name = {c.get("name", ""): c for c in candidates}
+        reserved: list[SlotAssignment] = []
+        spent = 0.0
+        for card in admission.selected:
+            name = card.get("name", "")
+            if not name or name in already:
+                if name in already:
+                    self._tracer.record(
+                        card_name=name,
+                        stage="engine_reserve",
+                        action="present",
+                        card_id=card.get("id"),
+                        reason="already placed; engine reservation skipped",
+                        force=True,
+                    )
+                continue
+            live = by_name.get(name, card)
+            try:
+                price = float(live.get("price_usd", 0) or 0)
+            except (TypeError, ValueError):
+                price = 0.0
+            if price < 0:
+                self._tracer.record(
+                    card_name=name,
+                    stage="engine_reserve",
+                    action="unavailable",
+                    card_id=live.get("id"),
+                    reason="unavailable: negative-cost sentinel rejected",
+                    force=True,
+                )
+                continue
+            if spent + price > request.budget_usd:
+                self._tracer.record(
+                    card_name=name,
+                    stage="engine_reserve",
+                    action="unavailable",
+                    card_id=live.get("id"),
+                    score=price,
+                    reason=(
+                        "unavailable: engine reserve would exceed budget "
+                        f"(${spent + price:.2f} > ${request.budget_usd:.2f}); "
+                        "engine preservation cannot override budget"
+                    ),
+                    force=True,
+                )
+                continue
+            spent += price
+            already.add(name)
+            reserved.append(
+                SlotAssignment(
+                    card=live,
+                    slot_role="utility",
+                    score=float(live.get("_cvar_score", 0.8) or 0.8),
+                )
+            )
+            self._tracer.record(
+                card_name=name,
+                stage="engine_reserve",
+                action="placed",
+                card_id=live.get("id"),
+                score=float(live.get("_cvar_score", 0) or 0),
+                reason="reserved engine package (copy-on-entry creature)",
+                force=True,
+            )
+        return reserved
+
     def _reserve_empirical_staples(
-        self, candidates, request, template, exclude_names=None,
+        self,
+        candidates,
+        request,
+        template,
+        exclude_names=None,
     ) -> list:
         """Stage 4.5: Reserve differentiator slots for strong-consensus cards.
 
@@ -967,7 +1396,8 @@ class DeckBuilder:
         # Eligible: reliable, above the inclusion floor, not a land, not already
         # placed by a generator (or an auto-include), within budget.
         eligible = [
-            c for c in candidates
+            c
+            for c in candidates
             if c.get("_empirical_reliable")
             and float(c.get("_empirical_inclusion", 0.0) or 0.0)
             >= cfg.empirical_reserve_min_inclusion
@@ -1003,9 +1433,13 @@ class DeckBuilder:
                 continue
             spent += price
             rate = float(card.get("_empirical_inclusion", 0.0) or 0.0)
-            reserved.append(SlotAssignment(
-                card=card, slot_role="utility", score=rate,
-            ))
+            reserved.append(
+                SlotAssignment(
+                    card=card,
+                    slot_role="utility",
+                    score=rate,
+                )
+            )
             self._tracer.record(
                 card_name=card.get("name", ""),
                 stage="empirical_reserve",
@@ -1027,7 +1461,13 @@ class DeckBuilder:
         return reserved
 
     def _fill_infrastructure(
-        self, candidates, commander, request, template,
+        self,
+        candidates,
+        commander,
+        request,
+        template,
+        already_placed: list | None = None,
+        budget_used: float = 0.0,
     ) -> tuple[list, float]:
         """Stage 4: Fill infrastructure slots with deterministic generators.
 
@@ -1043,9 +1483,9 @@ class DeckBuilder:
         )
         from sabermetrics.pipeline.slot_assigner import SlotAssignment
 
-        all_assignments: list[SlotAssignment] = []
-        budget_used = 0.0
+        all_assignments: list[SlotAssignment] = list(already_placed or [])
         colors = commander.color_identity
+        self._protected_names = set(getattr(self, "_protected_names", None) or ())
 
         # Helper to get cards with a specific role tag
         def _pool_by_role(role: str) -> list[dict]:
@@ -1065,10 +1505,14 @@ class DeckBuilder:
 
         def _land_pool() -> list[dict]:
             from sabermetrics.pipeline.greedy_optimizer import is_playable_as_land
+
             pool = []
             for card in candidates:
                 type_line = card.get("type_line") or ""
-                if is_playable_as_land(type_line) and "creature" not in type_line.lower():
+                if (
+                    is_playable_as_land(type_line)
+                    and "creature" not in type_line.lower()
+                ):
                     pool.append(card)
             return pool
 
@@ -1112,7 +1556,7 @@ class DeckBuilder:
         budget_used += sum(float(a.card.get("price_usd", 0) or 0) for a in ramp)
         _trace_infra(ramp, "infra_ramp")
         # Capture protected names from ramp generator for swap_refine
-        self._protected_names = ramp_gen.protected_names
+        self._protected_names |= ramp_gen.protected_names
 
         # 2. Draw
         draw_gen = DrawPackageGenerator(self.db_path)
@@ -1208,8 +1652,15 @@ class DeckBuilder:
         return all_assignments, budget_used
 
     def _optimize_differentiators(
-        self, candidates, infrastructure, profile_result, commander,
-        request, template, budget_used, reserved_count=0,
+        self,
+        candidates,
+        infrastructure,
+        profile_result,
+        commander,
+        request,
+        template,
+        budget_used,
+        reserved_count=0,
     ) -> tuple[list, dict]:
         """Stage 5+6: Synergy-aware greedy optimization.
 
@@ -1253,7 +1704,9 @@ class DeckBuilder:
 
         # 2. Build synergy matrix
         synergy = build_synergy_matrix(
-            candidates, commander.id, self.db_path,
+            candidates,
+            commander.id,
+            self.db_path,
         )
         # Record which pairwise signals were live (rules / embeddings).
         if hasattr(self, "_signals"):
@@ -1286,6 +1739,8 @@ class DeckBuilder:
 
         # 4. Swap refinement (infrastructure cards eligible for swap)
         protected = getattr(self, "_protected_names", None) or set()
+        protected |= set(getattr(self, "_engine_protect_names", None) or ())
+        self._emit_progress("optimize")
         all_assignments, swaps = swap_refine(
             deck=all_assignments,
             candidates=candidates,
@@ -1297,6 +1752,7 @@ class DeckBuilder:
             tracer=self._tracer,
             profile_signals=prof_signals,
         )
+        self._trace_engine_snapshot("swaps", all_assignments)
 
         # Note on Option A criterion 4 (no per-card LLM in the hot path):
         # the deterministic optimizer remains the selector. The vet below is
@@ -1311,11 +1767,17 @@ class DeckBuilder:
         from sabermetrics.pipeline.greedy_optimizer import rebalance_budget
 
         all_assignments, rebalance_stats = rebalance_budget(
-            all_assignments, candidates, synergy, role_targets,
-            budget=request.budget_usd, template=template,
-            profile_signals=prof_signals, protected_names=protected,
+            all_assignments,
+            candidates,
+            synergy,
+            role_targets,
+            budget=request.budget_usd,
+            template=template,
+            profile_signals=prof_signals,
+            protected_names=protected,
             tracer=self._tracer,
         )
+        self._trace_engine_snapshot("rebalance", all_assignments)
 
         # 5.5 Engine-floor repair: meet hard subtype minimums (engine-30
         # rule) that soft scoring pressure never reaches -- the type-need
@@ -1324,25 +1786,44 @@ class DeckBuilder:
         # rebalance (which is not type-aware and could undo it) and before
         # the vet, so every swapped-in card still faces the LLM gate.
         all_assignments, floor_swaps = self._enforce_type_floors(
-            all_assignments, candidates, template,
-            budget=request.budget_usd, protected_names=protected,
+            all_assignments,
+            candidates,
+            template,
+            budget=request.budget_usd,
+            protected_names=protected,
         )
+        self._trace_engine_snapshot("type_floor", all_assignments)
 
         # 6. LLM safety net LAST: one batched Sonnet call over the riskiest
         # ~14 picks, with corpus evidence in the prompt.
+        self._emit_progress("review")
+        review_started = time.time()
         llm_cost = 0.0
+        self._review_failed = False
         try:
             all_assignments, llm_cost = self._llm_safety_check(
-                all_assignments, candidates, synergy, role_targets,
-                profile_result, request, n_weakest=99,  # full-deck review: every non-staple pick faces the gate
+                all_assignments,
+                candidates,
+                synergy,
+                role_targets,
+                profile_result,
+                request,
+                n_weakest=99,  # full-deck review: every non-staple pick faces the gate
                 protected_names=protected,
             )
-        except Exception as e:
+            if llm_cost < 0:
+                self._review_failed = True
+                llm_cost = 0.0
+        except Exception as e:  # noqa: BLE001 - isolate external review failures
             # A silently-skipped vet produced the worst deck of the project
             # (build7: an AttributeError left 29 unreviewed swaps in). Log the
-            # full traceback and surface the failure in pipeline metrics.
-            logger.exception("LLM safety check FAILED — deck is unvetted: %s", e)
-            llm_cost = -1.0
+            # error type and surface the failure in pipeline metrics.
+            # Never use a negative sentinel: that subtracted spend from the
+            # ledger while hiding the failure.
+            logger.error("LLM safety check failed (%s)", type(e).__name__)
+            self._review_failed = True
+            llm_cost = 0.0
+        self._trace_engine_snapshot("review", all_assignments)
 
         # Add fit reasoning for cards that lack it
         for a in all_assignments:
@@ -1353,15 +1834,19 @@ class DeckBuilder:
             "synergy_matrix_size": len(synergy.card_id_to_index),
             "role_targets": {r: t.target_count for r, t in role_targets.items()},
             "cards_swapped": swaps,
+            "review_seconds": time.time() - review_started,
             "llm_safety_cost": llm_cost,
-            "llm_safety_failed": llm_cost < 0,
+            "llm_safety_failed": self._review_failed,
             "budget_utilization": rebalance_stats.get("utilization", 0.0),
             "rebalance_upgrades": rebalance_stats.get("upgrades", 0),
             "rebalance_unbundles": rebalance_stats.get("unbundles", 0),
             "type_floor_swaps": floor_swaps,
             "objective_score": deck_objective(
-                [a.card for a in all_assignments], synergy, role_targets,
-                template, profile_signals=prof_signals,
+                [a.card for a in all_assignments],
+                synergy,
+                role_targets,
+                template,
+                profile_signals=prof_signals,
             ),
         }
         return all_assignments, metrics
@@ -1410,7 +1895,8 @@ class DeckBuilder:
         swaps = 0
 
         for type_name, floor in floors.items():
-            def _on_type(card: dict) -> bool:
+
+            def _on_type(card: dict, type_name=type_name) -> bool:
                 return type_name in (card.get("type_line") or "").lower()
 
             count = sum(1 for a in assignments if _on_type(a.card))
@@ -1419,7 +1905,8 @@ class DeckBuilder:
 
             pool = sorted(
                 (
-                    c for c in candidates
+                    c
+                    for c in candidates
                     if _on_type(c)
                     and c.get("name", "") not in deck_names
                     and not c.get("_anti_engine")
@@ -1432,13 +1919,12 @@ class DeckBuilder:
             )
             removable = sorted(
                 (
-                    a for a in assignments
+                    a
+                    for a in assignments
                     if a.card.get("name", "") not in protected
                     and not _on_type(a.card)
                     and a.slot_role != "land"
-                    and not is_playable_as_land(
-                        a.card.get("type_line") or ""
-                    )
+                    and not is_playable_as_land(a.card.get("type_line") or "")
                 ),
                 key=lambda a: a.score,
             )
@@ -1473,19 +1959,22 @@ class DeckBuilder:
                 count += 1
                 swaps += 1
                 if self._tracer is not None:
-                    reason = (
-                        f"type floor: {type_name} {count - 1} < {floor}"
-                    )
+                    reason = f"type floor: {type_name} {count - 1} < {floor}"
                     self._tracer.record(
                         card_name=outgoing.card.get("name", ""),
-                        stage="type_floor", action="swapped_out",
+                        stage="type_floor",
+                        action="swapped_out",
                         card_id=outgoing.card.get("id"),
-                        score=outgoing.score, reason=reason, force=True,
+                        score=outgoing.score,
+                        reason=reason,
+                        force=True,
                     )
                     self._tracer.record(
                         card_name=incoming.get("name", ""),
-                        stage="type_floor", action="swapped_in",
-                        card_id=incoming.get("id"), score=score,
+                        stage="type_floor",
+                        action="swapped_in",
+                        card_id=incoming.get("id"),
+                        score=score,
                         reason=f"replaced {outgoing.card.get('name', '')}",
                         force=True,
                     )
@@ -1493,7 +1982,9 @@ class DeckBuilder:
             if count < floor:
                 logger.warning(
                     "Type floor unmet after repair: %s %d < %d",
-                    type_name, count, floor,
+                    type_name,
+                    count,
+                    floor,
                 )
 
         return assignments, swaps
@@ -1517,6 +2008,7 @@ class DeckBuilder:
         Returns:
             The pairs sorted for review.
         """
+
         def sort_key(pair):
             _, a = pair
             emp = float(a.card.get("_empirical_inclusion", 0.0) or 0.0)
@@ -1550,13 +2042,19 @@ class DeckBuilder:
 
         best, best_key = None, (-1, -1.0)
         for c in candidates:
+            try:
+                price = float(c.get("price_usd", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if price < 0:
+                continue  # negative-cost sentinels are not discounts
             if (
                 c.get("name", "") in deck_names
                 or "land" in (c.get("type_line") or "").lower()
                 or c.get("_anti_engine")
             ):
                 continue
-            if max_price is not None and float(c.get("price_usd", 0) or 0) > max_price:
+            if max_price is not None and price > max_price:
                 continue
             value = float(c.get("_cvar_score", 0.0) or 0.0) + empirical_bonus(
                 c,
@@ -1564,10 +2062,7 @@ class DeckBuilder:
                 settings.scoring.marginal_empirical_noisy_weight,
             )
             inclusion = float(c.get("_empirical_inclusion", 0.0) or 0.0)
-            tier = (
-                1 if not corpus_active or inclusion >= corroboration_threshold
-                else 0
-            )
+            tier = 1 if not corpus_active or inclusion >= corroboration_threshold else 0
             # corroborated_only: hard gate, not a preference. Used by the
             # re-vet round, whose picks are accepted without further review
             # -- an unreviewed slot may only be filled by a card real decks
@@ -1579,8 +2074,14 @@ class DeckBuilder:
         return best
 
     def _llm_safety_check(
-        self, deck, candidates, synergy, role_targets,
-        profile_result, request, n_weakest=8,
+        self,
+        deck,
+        candidates,
+        synergy,
+        role_targets,
+        profile_result,
+        request,
+        n_weakest=8,
         protected_names: set[str] | None = None,
     ) -> tuple[list, float]:
         """Score the riskiest picks via Haiku and swap out poor fits.
@@ -1601,11 +2102,13 @@ class DeckBuilder:
         from sabermetrics.config import settings
         from sabermetrics.pipeline.slot_assigner import SlotAssignment
 
-        protected = protected_names or set()
+        protected = set(protected_names or ())
+        protected |= set(getattr(self, "_engine_protect_names", None) or ())
 
-        # Review candidates: non-land, non-protected
+        # Review candidates: non-land, non-protected (engine package stays)
         indexed = [
-            (i, a) for i, a in enumerate(deck)
+            (i, a)
+            for i, a in enumerate(deck)
             if a.slot_role != "land"
             and "land" not in (a.card.get("type_line") or "").lower()
             and a.card.get("name", "") not in protected
@@ -1613,10 +2116,13 @@ class DeckBuilder:
         empirical = getattr(self, "_empirical", None)
         corpus_active = empirical is not None and bool(empirical.reliable)
         indexed = self._safety_review_order(
-            indexed, corpus_active,
+            indexed,
+            corpus_active,
             settings.scoring.safety_uncorroborated_max_inclusion,
         )
         weakest = indexed[:n_weakest]
+        if hasattr(self, "_stage_counts"):
+            self._stage_counts["review_cards"] = len(weakest)
 
         if not weakest:
             return deck, 0.0
@@ -1651,7 +2157,9 @@ class DeckBuilder:
             vetoed_names: set[str] = set()
 
             def _replace_bad_fits(
-                scored, stage: str, corroborated_only: bool = False,
+                scored,
+                stage: str,
+                corroborated_only: bool = False,
             ) -> list[int]:
                 """Swap out picks the LLM scored <= 3; return swap-in indices."""
                 swapped_in: list[int] = []
@@ -1673,13 +2181,40 @@ class DeckBuilder:
                     )
                     old_price = float(card.get("price_usd", 0) or 0)
                     replacement = self._best_replacement(
-                        candidates, deck_names | vetoed_names,
+                        candidates,
+                        deck_names | vetoed_names,
                         max_price=old_price + max(0.0, budget_left),
                         corpus_active=corpus_active,
                         corroboration_threshold=corroboration_threshold,
                         corroborated_only=corroborated_only,
                     )
                     if not replacement:
+                        continue
+                    from sabermetrics.pipeline.quality import replacement_is_valid
+
+                    colors = set()
+                    ca = getattr(
+                        getattr(profile_result, "profile", None),
+                        "card_analysis",
+                        None,
+                    )
+                    if ca is not None:
+                        colors = set(ca.color_identity or [])
+                    ok, why = replacement_is_valid(
+                        replacement,
+                        commander_colors=colors or None,
+                        deck_names=deck_names | vetoed_names,
+                        max_price=old_price + max(0.0, budget_left),
+                    )
+                    if not ok:
+                        self._tracer.record(
+                            card_name=replacement.get("name", ""),
+                            stage=stage,
+                            action="rejected",
+                            card_id=replacement.get("id"),
+                            reason=f"replacement failed validation: {why}",
+                            force=True,
+                        )
                         continue
                     old_name = card.get("name", "")
                     vetoed_names.add(old_name)
@@ -1716,15 +2251,19 @@ class DeckBuilder:
                     )
                     logger.info(
                         "LLM safety (%s): replaced %s (score %d) with %s",
-                        stage, old_name, fit_response.fit_score, new_name,
+                        stage,
+                        old_name,
+                        fit_response.fit_score,
+                        new_name,
                     )
                     swapped_in.append(deck_idx)
                 return swapped_in
 
             scored = [
                 (deck_idx, card, fit_response)
-                for (deck_idx, _assignment), (card, fit_response)
-                in zip(weakest, results)
+                for (deck_idx, _assignment), (card, fit_response) in zip(
+                    weakest, results
+                )
             ]
             swap_in_idxs = _replace_bad_fits(scored, "llm_safety")
 
@@ -1743,23 +2282,28 @@ class DeckBuilder:
                 )
                 revet_scored = [
                     (deck_idx, card, fit_response)
-                    for deck_idx, (card, fit_response)
-                    in zip(swap_in_idxs, revet_results)
+                    for deck_idx, (card, fit_response) in zip(
+                        swap_in_idxs, revet_results
+                    )
                 ]
                 # Round-2 replacements are accepted without further review,
                 # so they are restricted to corpus-corroborated cards: an
                 # unreviewed slot never gets an unreviewed text-matcher.
                 second_round = _replace_bad_fits(
-                    revet_scored, "llm_safety_revet", corroborated_only=True,
+                    revet_scored,
+                    "llm_safety_revet",
+                    corroborated_only=True,
                 )
                 if second_round:
                     logger.info(
                         "LLM safety re-vet: %d second-round replacements "
-                        "(accepted without further review)", len(second_round),
+                        "(accepted without further review)",
+                        len(second_round),
                     )
 
         except Exception as e:
             logger.warning("LLM safety net scoring failed: %s", e)
+            raise
 
         return deck, total_cost
 
@@ -1772,10 +2316,7 @@ class DeckBuilder:
             f"Commander: {profile.commander_name}\n"
             f"Archetype: {sp.primary_archetype}\n"
             f"Game Plan: {sp.game_plan_summary}\n"
-            f"Win Conditions: "
-            + ", ".join(
-                wc.description for wc in sp.win_conditions
-            )
+            f"Win Conditions: " + ", ".join(wc.description for wc in sp.win_conditions)
         )
 
         # Add value inversions
@@ -1890,8 +2431,11 @@ class DeckBuilder:
                 ci = _parse_color_identity(a.card)
                 if not ci <= commander_colors:
                     self._tracer.record(
-                        card_name=name, stage="legality", action="rejected",
-                        card_id=a.card.get("id"), reason="out of color identity",
+                        card_name=name,
+                        stage="legality",
+                        action="rejected",
+                        card_id=a.card.get("id"),
+                        reason="out of color identity",
                         force=True,
                     )
                     continue
@@ -1900,12 +2444,13 @@ class DeckBuilder:
 
         # Pass 2: trim to 99 if over (basics → weak non-land → weak land).
         if len(kept) > 99:
+
             def _removable_rank(a) -> tuple[int, float]:
                 name = a.card.get("name", "")
                 if _is_basic(name):
-                    return (0, a.score)          # basics first
+                    return (0, a.score)  # basics first
                 if name in protected:
-                    return (3, a.score)          # protected last
+                    return (3, a.score)  # protected last
                 return (1 if not _is_land(a) else 2, a.score)
 
             # Remove highest-rank / lowest-score first until exactly 99.
@@ -1913,9 +2458,13 @@ class DeckBuilder:
             excess = len(kept) - 99
             for a in kept[:excess]:
                 self._tracer.record(
-                    card_name=a.card.get("name", ""), stage="legality",
-                    action="swapped_out", card_id=a.card.get("id"),
-                    score=a.score, reason="trimmed to reach 99", force=True,
+                    card_name=a.card.get("name", ""),
+                    stage="legality",
+                    action="swapped_out",
+                    card_id=a.card.get("id"),
+                    score=a.score,
+                    reason="trimmed to reach 99",
+                    force=True,
                 )
             kept = kept[excess:]
 
@@ -1926,30 +2475,38 @@ class DeckBuilder:
         # it must be LOUD: traced and warned, never invisible.
         if len(kept) < 99:
             shortfall = 99 - len(kept)
+            self._legality_backfill = shortfall
             if shortfall > 2:
                 logger.warning(
                     "Legality repair backfilling %d basics -- an upstream "
-                    "stage under-produced; inspect the build", shortfall,
+                    "stage under-produced; inspect the build",
+                    shortfall,
                 )
             if getattr(self, "_tracer", None) is not None:
                 self._tracer.record(
-                    card_name=f"{shortfall}x basic land", stage="legality",
+                    card_name=f"{shortfall}x basic land",
+                    stage="legality",
                     action="placed",
                     reason="backfill to 99 (upstream shortfall)",
                     force=True,
                 )
-            kept.extend(
-                _make_basic_lands(shortfall, commander.color_identity or [])
-            )
+            kept.extend(_make_basic_lands(shortfall, commander.color_identity or []))
 
         if len(kept) != 99:  # invariant must hold
-            logger.error(
-                "Legality repair produced %d cards (expected 99)", len(kept)
-            )
+            logger.error("Legality repair produced %d cards (expected 99)", len(kept))
         return kept
 
-    def _synthesize_narrative(self, profile_result, assembly, request):
-        """Generate deck narrative via Sonnet."""
+    def _synthesize_narrative(
+        self, profile_result, assembly, request, classification=None
+    ):
+        """Render a final-list facts summary.
+
+        Supplies the synthesizer with actual final-card facts (name, mana
+        value, oracle text, type, role). Name-only callers of DeckSynthesizer
+        remain supported; this builder path does not invent missing evidence.
+        """
+        from sabermetrics.pipeline.intent import oracle_text_of
+
         profile = profile_result.profile
         sp = profile.strategic_profile
         profile_summary = (
@@ -1959,13 +2516,45 @@ class DeckBuilder:
         )
 
         deck_cards_with_reasoning = []
+        commander = getattr(self, "_commander", None)
+        if commander is not None:
+            deck_cards_with_reasoning.append(
+                {
+                    "name": commander.name,
+                    "role": "commander",
+                    "slot_role": "commander",
+                    "mana_value": commander.cmc,
+                    "oracle_text": commander.oracle_text,
+                    "type_line": commander.type_line,
+                }
+            )
         for assignment in assembly.assignments:
-            deck_cards_with_reasoning.append({
-                "name": assignment.card.get("name", "Unknown"),
-                "slot_role": assignment.slot_role,
-                "fit_score": round(assignment.score * 10, 1),
-                "reasoning": "",
-            })
+            card = assignment.card
+            mana_value = card.get("cmc", card.get("mana_value"))
+            type_line = card.get("type_line") or ""
+            oracle = oracle_text_of(card)
+            deck_cards_with_reasoning.append(
+                {
+                    "name": card.get("name", "Unknown"),
+                    "slot_role": assignment.slot_role,
+                    "role": assignment.slot_role,
+                    "mana_value": mana_value,
+                    "cmc": mana_value,
+                    "oracle_text": oracle,
+                    "type": type_line,
+                    "type_line": type_line,
+                    "fit_score": round(assignment.score * 10, 1),
+                    "reasoning": card.get("_fit_reasoning") or "",
+                }
+            )
+
+        estimated = getattr(classification, "estimated_bracket", None)
+        requested = request.power_target
+        bracket_reasoning = (
+            f"Requested bracket {requested}; estimated bracket "
+            f"{estimated if estimated is not None else 'unknown'}. "
+            "The classifier is a heuristic, not ground truth."
+        )
 
         try:
             from sabermetrics.reasoning.synthesis import DeckSynthesizer
@@ -1974,8 +2563,8 @@ class DeckBuilder:
             synthesis, cost = synthesizer.synthesize(
                 profile_summary=profile_summary,
                 deck_cards_with_reasoning=deck_cards_with_reasoning,
-                bracket=request.power_target,
-                bracket_reasoning="Target power level",
+                bracket=estimated if estimated is not None else requested,
+                bracket_reasoning=bracket_reasoning,
             )
             narrative = DeckNarrative(
                 game_plan=synthesis.game_plan,
@@ -1986,18 +2575,15 @@ class DeckBuilder:
             if hasattr(self, "_signals"):
                 self._signals["narrative"] = True
             return narrative, cost
-        except Exception as e:
-            logger.warning("Narrative synthesis failed: %s", e)
+        except Exception as e:  # noqa: BLE001 - summary errors must fail conservatively
+            logger.warning("Narrative synthesis failed (%s)", type(e).__name__)
             if hasattr(self, "_signals"):
                 self._signals["narrative"] = False
             narrative = DeckNarrative(
-                game_plan=profile_result.profile.strategic_profile.game_plan_summary,
-                key_synergies=[
-                    wc.description
-                    for wc in profile_result.profile.strategic_profile.win_conditions
-                ],
-                weaknesses=["Unable to generate narrative — LLM unavailable."],
-                suggested_play_pattern="Follow the core game plan.",
+                game_plan="A summary could not be prepared for this deck.",
+                key_synergies=[],
+                weaknesses=["Deck summary unavailable."],
+                suggested_play_pattern="Review the listed cards and their printed rules text.",
             )
             return narrative, 0.0
 
@@ -2057,7 +2643,7 @@ class DeckBuilder:
                 set_code=card_data.get("set_code", ""),
                 rarity=card_data.get("rarity", "common"),
                 image_uri=card_data.get("image_uri"),
-                last_updated=card_data.get("last_updated", datetime.now()),
+                last_updated=card_data.get("last_updated", datetime.now(UTC)),
                 current_price_usd=card_data.get("price_usd"),
             )
 
@@ -2069,19 +2655,22 @@ class DeckBuilder:
                 card_win_equity=cvar_data.get("card_win_equity"),
             )
 
-            deck_cards.append(DeckCard(
-                card=card_model,
-                slot_role=assignment.slot_role,
-                cvar_score=assignment.score,
-                sub_scores=sub_scores,
-                llm_fit=LLMFit(
-                    score=max(1, min(10, round(assignment.score * 10))),
-                    reasoning=card_data.get("_fit_reasoning", "Auto-scored"),
-                ),
-                alternatives=assignment.alternatives,
-            ))
+            deck_cards.append(
+                DeckCard(
+                    card=card_model,
+                    slot_role=assignment.slot_role,
+                    cvar_score=assignment.score,
+                    sub_scores=sub_scores,
+                    llm_fit=LLMFit(
+                        score=max(1, min(10, round(assignment.score * 10))),
+                        reasoning=card_data.get("_fit_reasoning", "Auto-scored"),
+                    ),
+                    alternatives=assignment.alternatives,
+                )
+            )
 
         # Composition stats
+        from sabermetrics.analytics.brackets import _detect_combos
         from sabermetrics.analytics.components import (
             count_board_wipes,
             count_card_draw,
@@ -2089,7 +2678,6 @@ class DeckBuilder:
             count_removal,
             count_tutors,
         )
-        from sabermetrics.analytics.brackets import _detect_combos
 
         all_card_dicts = [a.card for a in assembly.assignments]
 
@@ -2108,13 +2696,21 @@ class DeckBuilder:
                 color_dist[c] = color_dist.get(c, 0) + 1
 
             type_line = card.get("type_line", "")
-            for t in ["Creature", "Instant", "Sorcery", "Artifact",
-                       "Enchantment", "Planeswalker", "Land"]:
+            for t in [
+                "Creature",
+                "Instant",
+                "Sorcery",
+                "Artifact",
+                "Enchantment",
+                "Planeswalker",
+                "Land",
+            ]:
                 if t in type_line:
                     type_dist[t] = type_dist.get(t, 0) + 1
 
         non_lands = [
-            c for c in all_card_dicts
+            c
+            for c in all_card_dicts
             if "land" not in (c.get("type_line") or "").lower()
         ]
         cmcs = [float(c.get("cmc", 0)) for c in non_lands if c.get("cmc")]
@@ -2123,13 +2719,17 @@ class DeckBuilder:
         gc_names = []
         try:
             from sabermetrics.analytics.brackets import _load_game_changers
+
             game_changers = _load_game_changers()
             for card in all_card_dicts:
                 name = (card.get("name") or "").lower()
                 if name in game_changers:
                     gc_names.append(card.get("id", ""))
-        except Exception:
-            pass
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            logger.warning(
+                "Optional trace or classification data unavailable (%s)",
+                type(exc).__name__,
+            )
 
         combos = _detect_combos(all_card_dicts, self.db_path)
         combo_ids = [c["id"] for c in combos]
@@ -2160,7 +2760,7 @@ class DeckBuilder:
         return GeneratedDeck(
             id=deck_id,
             commander=commander,
-            generated_at=datetime.now(),
+            generated_at=datetime.now(UTC),
             parameters=DeckParameters(
                 budget_usd=request.budget_usd,
                 power_target=request.power_target,
@@ -2187,25 +2787,33 @@ class DeckBuilder:
         """Save to generated_decks table."""
         conn = sqlite3.connect(str(self.db_path))
         try:
-            cards_json = json.dumps([
-                {
-                    "card_id": dc.card.id,
-                    "name": dc.card.name,
-                    "slot_role": dc.slot_role,
-                    "cvar_score": dc.cvar_score,
-                    "fit_score": dc.llm_fit.score,
-                    "reasoning": dc.llm_fit.reasoning,
-                    "alternatives": dc.alternatives,
-                }
-                for dc in deck.cards
-            ])
+            cards_json = json.dumps(
+                [
+                    {
+                        "card_id": dc.card.id,
+                        "name": dc.card.name,
+                        "slot_role": dc.slot_role,
+                        "cvar_score": dc.cvar_score,
+                        "fit_score": dc.llm_fit.score,
+                        "reasoning": dc.llm_fit.reasoning,
+                        "alternatives": dc.alternatives,
+                    }
+                    for dc in deck.cards
+                ]
+            )
 
-            rationale = json.dumps({
-                "narrative": deck.narrative.model_dump(),
-                "composition": deck.composition.model_dump(),
-                "signals_used": deck.meta.signals_used,
-                "signals_unavailable": deck.meta.signals_unavailable,
-            })
+            rationale = json.dumps(
+                {
+                    "narrative": deck.narrative.model_dump(),
+                    "composition": deck.composition.model_dump(),
+                    "signals_used": deck.meta.signals_used,
+                    "signals_unavailable": deck.meta.signals_unavailable,
+                    "quality_warnings": list(getattr(self, "_quality_warnings", [])),
+                    "stage_timings": dict(getattr(self, "_stage_timings", {})),
+                    "stage_counts": dict(getattr(self, "_stage_counts", {})),
+                    "engine": getattr(self, "_engine_rationale", None),
+                }
+            )
 
             conn.execute(
                 "INSERT OR REPLACE INTO generated_decks "
@@ -2222,8 +2830,11 @@ class DeckBuilder:
                     deck.parameters.strategy,
                     cards_json,
                     rationale,
-                    sum(dc.cvar_score for dc in deck.cards) / len(deck.cards)
-                    if deck.cards else 0.0,
+                    (
+                        sum(dc.cvar_score for dc in deck.cards) / len(deck.cards)
+                        if deck.cards
+                        else 0.0
+                    ),
                     deck.classification.estimated_bracket,
                     deck.generated_at.isoformat(),
                     deck.parameters.deck_name,
@@ -2237,9 +2848,17 @@ class DeckBuilder:
 
 # Basic land names that are exempt from the singleton rule.
 _BASIC_LAND_NAMES: set[str] = {
-    "Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes",
-    "Snow-Covered Plains", "Snow-Covered Island", "Snow-Covered Swamp",
-    "Snow-Covered Mountain", "Snow-Covered Forest",
+    "Plains",
+    "Island",
+    "Swamp",
+    "Mountain",
+    "Forest",
+    "Wastes",
+    "Snow-Covered Plains",
+    "Snow-Covered Island",
+    "Snow-Covered Swamp",
+    "Snow-Covered Mountain",
+    "Snow-Covered Forest",
 }
 
 
@@ -2280,22 +2899,24 @@ def _make_basic_lands(count: int, commander_colors: list[str]) -> list:
         name = names[i % len(names)]
         # uuid suffix avoids id collisions with basics minted elsewhere (e.g.
         # the mana-base builder), which also use a "basic-<name>-<n>" scheme.
-        out.append(SlotAssignment(
-            card={
-                "id": f"basic-{name.lower().replace(' ', '-')}-{uuid.uuid4().hex[:8]}",
-                "name": name,
-                "type_line": f"Basic Land — {name}",
-                "oracle_text": "",
-                "mana_cost": "",
-                "cmc": 0.0,
-                "color_identity": "[]",
-                "price_usd": 0.0,
-                "rarity": "common",
-            },
-            slot_role="land",
-            score=0.5,
-            alternatives=[],
-        ))
+        out.append(
+            SlotAssignment(
+                card={
+                    "id": f"basic-{name.lower().replace(' ', '-')}-{uuid.uuid4().hex[:8]}",
+                    "name": name,
+                    "type_line": f"Basic Land — {name}",
+                    "oracle_text": "",
+                    "mana_cost": "",
+                    "cmc": 0.0,
+                    "color_identity": "[]",
+                    "price_usd": 0.0,
+                    "rarity": "common",
+                },
+                slot_role="land",
+                score=0.5,
+                alternatives=[],
+            )
+        )
     return out
 
 
@@ -2305,12 +2926,13 @@ def _is_ramp(type_line: str, oracle_text: str) -> bool:
         return True
     if "search your library for a" in oracle_text and "land" in oracle_text:
         return True
-    if "put" in oracle_text and "land" in oracle_text and "battlefield" in oracle_text:
-        return True
-    return False
+    return (
+        "put" in oracle_text and "land" in oracle_text and "battlefield" in oracle_text
+    )
 
 
 def _heuristic_role(card: dict) -> str:
     """Classify card role by heuristics when LLM is unavailable."""
     from sabermetrics.pipeline.slot_assigner import _classify_card_role
+
     return _classify_card_role(card)

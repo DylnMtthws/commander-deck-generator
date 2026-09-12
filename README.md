@@ -26,7 +26,16 @@ editing, and simulation product now lives in the separate Deck Lab repository.
   Pareto filtering, greedy selection, swap refinement, and budget repair.
 - **Grounded model use.** Commander profiles combine card text with available
   decklist and reference evidence. A batched safety review inspects risky picks;
-  deterministic code owns assembly and final legality checks.
+  deterministic code owns assembly and final legality checks. Profile identity,
+  set, timestamp, and evidence provenance come from trusted inputs. Final deck
+  summaries are rendered from selected card facts, without a prose-model call.
+- **Durable background work.** SQLite job records expose actual build stages,
+  survive browser reloads, and isolate status by owner. A process lock enforces
+  one worker; abandoned builds fail visibly after restart instead of silently
+  repeating paid requests.
+- **Explicit quality contracts.** Supported copy-creature intent becomes a
+  protected engine requirement. Final checks distinguish illegal lists from
+  unmet strategy, role, or bracket targets. Warnings remain attached to the deck.
 - **Cost observability.** A shared model client records token usage and estimated
   cost, retries transient failures, supports prompt caching, and checks a
   configured monthly spend ceiling before calls. Pricing constants and usage
@@ -62,7 +71,7 @@ See [`pipeline/`](src/sabermetrics/pipeline/),
 ## Run locally
 
 Requires Python 3.11+, disk space for the card corpus and CPU embedding model,
-and a DeepSeek API credential for actual generation.
+and a Hugging Face Inference Providers credential for actual generation.
 
 ```sh
 git clone https://github.com/DylnMtthws/commander-deck-generator.git
@@ -72,6 +81,7 @@ source .venv/bin/activate
 pip install -e '.[dev]'
 python scripts/setup_db.py
 python scripts/initial_ingestion.py --scryfall-only
+python scripts/setup_db.py --prepare-corpus
 export SABER_OWNER_EMAIL=you@example.com
 export SABER_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 export SABER_COOKIE_SECURE=0
@@ -94,11 +104,14 @@ sabermetrics health
 For richer empirical evidence, run `pull-decks`, `cluster-decks`, and
 `value-cards` for the commander. These commands require network access and source
 availability. Settings, scoring weights, model IDs, and cost estimates live in
-[`config/settings.yaml`](config/settings.yaml).
+[`config/settings.yaml`](config/settings.yaml). Configuration ships inside the wheel;
+`config/` links to the same packaged files. `SABER_CONFIG_DIR` can supply an explicit
+configuration directory. Schema upgrades are additive; public role tagging and
+candidate preparation run separately so normal requests do not repeat that work.
 
 ## Model provider and cost
 
-All generation stages use Hugging Face Inference Providers, pinned to
+Profile and card-review model calls use Hugging Face Inference Providers, pinned to
 `deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra`. Requests go to
 `https://router.huggingface.co/v1` and authenticate with `HF_TOKEN`. Create a
 [fine-grained token](https://huggingface.co/settings/tokens) with **Make calls to
@@ -117,7 +130,8 @@ These are estimates, not invoices; rates were checked September 12, 2026 against
 [DeepInfra's model pricing](https://deepinfra.com/deepseek-ai/DeepSeek-V4-Flash-0731/api).
 The existing $15 rolling-30-day spend threshold remains configured. Invalid or
 truncated answers with valid usage counters are charged to the ledger before
-being rejected. Deck quality with this model still requires live evaluation.
+being rejected. Deterministic final summaries add no model cost. Quality is checked with public-card
+regressions and bounded integration evaluations; these do not establish win rates.
 
 ## Verification and code tour
 
@@ -140,7 +154,12 @@ revoked sessions, and invite/user-management bypass attempts.
 | [`ingestion/`](src/sabermetrics/ingestion/) | Source adapters and refresh support |
 | [`reference_layer/`](src/sabermetrics/reference_layer/) | Reference chunking, embeddings, retrieval |
 | [`ui/`](src/sabermetrics/ui/) | Flask application, owner authentication, saved deck views |
+| [`generation_jobs.py`](src/sabermetrics/generation_jobs.py) | Durable jobs, worker ownership, progress and recovery |
+| [`runtime/`](src/sabermetrics/runtime/) | Packaged scoring resources, additive migrations and readiness |
 | [`tests/`](tests/) | Unit, regression, and optional corpus-backed tests |
+
+Reviewable acceptance criteria and regression scenarios are in the
+[generator quality specification](docs/specs/generator-quality/README.md).
 
 ## Tradeoffs and limitations
 
@@ -148,7 +167,9 @@ This is an optimization and reasoning experiment, not a competitive win-rate
 predictor or gameplay simulator. Deck quality depends on corpus freshness,
 heuristics, and model behavior. Budget enforcement uses available price data,
 which can differ from checkout prices. No measured average generation cost or
-latency is claimed. The historical spend check does not reserve budget atomically
+latency is claimed. Strategy recognition currently supports mana-value-limited
+creature copies; other free-form requests are labeled unverified. A requested
+power bracket is a target, not a guarantee. The historical spend check does not reserve budget atomically
 across concurrent calls, so concurrent generation may overshoot its threshold.
 
 CPU embeddings make deployment heavier than Deck Lab. A single-host service
