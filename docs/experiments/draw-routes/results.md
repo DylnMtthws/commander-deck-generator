@@ -1,5 +1,9 @@
 # Draw routes, prerequisites, and commander acceleration
 
+**Subsequent release:** the owner authorized deploying these bounded checks after
+this experiment. See [release scope](release.md); the measured limitations below
+remain unchanged.
+
 This experiment separates the cost of accessing draw from a card's printed mana value. It adds an opt-in `routes` policy; the default and deployed policy remain unchanged.
 
 ## Implementation

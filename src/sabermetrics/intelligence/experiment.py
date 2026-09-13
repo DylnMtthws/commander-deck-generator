@@ -74,7 +74,13 @@ def current() -> Experiment:
 
 def production_policy() -> Experiment:
     """Exact deployed web policy, shared with evaluation rather than re-created."""
-    return Experiment(draw_selection=True, preserve_functions=True)
+    return Experiment(
+        draw_selection=True,
+        preserve_functions=True,
+        swap_policy="preserve",
+        rebalance_policy="preserve",
+        draw_package_policy="routes",
+    )
 
 
 @contextmanager

@@ -9,7 +9,11 @@ from sabermetrics.ui.routes import _execute_generation
 @pytest.mark.parametrize('fail', [False, True])
 def test_web_worker_uses_guarded_policy_and_restores_scope(monkeypatch, tmp_path, fail):
     def build(self, request):
-        assert current() == Experiment(draw_selection=True, preserve_functions=True)
+        assert current() == Experiment(
+            draw_selection=True, preserve_functions=True,
+            swap_policy="preserve", rebalance_policy="preserve",
+            draw_package_policy="routes",
+        )
         if fail:
             raise RuntimeError('test failure')
         return SimpleNamespace(deck=SimpleNamespace(id=request.deck_id))
