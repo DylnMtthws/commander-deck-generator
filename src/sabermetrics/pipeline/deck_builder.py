@@ -364,13 +364,25 @@ class DeckBuilder:
         from sabermetrics.intelligence.experiment import current as draw_experiment
 
         self._draw_enabled = draw_experiment().draw_selection
+        self._function_guard_enabled = (
+            self._draw_enabled and draw_experiment().preserve_functions
+        )
         # No automatic replacement when the policy cannot value competitive
         # engines or commander-based toughness/defender card advantage.
         self._draw_audit_only = (
             request.power_target >= 4 or "defender" in commander.oracle_text.lower()
         )
+        self._guard_candidates = (
+            candidates
+            if self._function_guard_enabled and not self._draw_audit_only
+            else []
+        )
         self._draw_candidates = (
-            candidates if self._draw_enabled and not self._draw_audit_only else []
+            candidates
+            if self._draw_enabled
+            and not self._draw_audit_only
+            and not self._function_guard_enabled
+            else []
         )
         candidates = self._pareto_filter(candidates)
         metrics["4_pareto"] = time.time() - t
@@ -551,6 +563,57 @@ class DeckBuilder:
             all_assignments, commander.model_dump()
         )
         self._intelligence["simulation"] = simulation
+
+        # The guarded experiment starts from the completed baseline, AFTER every
+        # selection-changing stage. Early reservation is disabled in this mode.
+        # Narrative and persistence below do not select replacements.
+        if self._guard_candidates:
+            from sabermetrics.intelligence.function_guard import guarded_repair
+            from sabermetrics.pipeline.slot_assigner import SlotAssignment
+
+            fixed, receipt = guarded_repair(
+                [a.card for a in all_assignments],
+                self._guard_candidates,
+                commander.model_dump(),
+                request.budget_usd,
+                request.power_target,
+                protected=set(self._protected_names or ())
+                | set(getattr(self, "_engine_protect_names", ()) or ()),
+            )
+            old = {a.card["name"]: a for a in all_assignments}
+            all_assignments = [
+                (
+                    old[c["name"]].model_copy(update={"card": c})
+                    if c["name"] in old
+                    else SlotAssignment(card=c, slot_role="draw", score=0.0)
+                )
+                for c in fixed
+            ]
+            self._intelligence["draw_selection"] = receipt
+            self._trace_engine_snapshot("function_guard", all_assignments)
+            if receipt.get("guard", {}).get("changed"):
+                simulation["scope_note"] = (
+                    "Mana probe preceded proved draw-spell substitutions; no mana-source changes were made."
+                )
+        elif self._function_guard_enabled:
+            from copy import deepcopy
+
+            from sabermetrics.intelligence.function_guard import validate_transition
+
+            baseline = deepcopy([a.card for a in all_assignments])
+            self._intelligence["draw_selection"] = {
+                "status": "unresolved",
+                "mode": "audit_only",
+                "decisions": [],
+                "reason": "Automatic changes disabled in this strategy context.",
+                "baseline_cards": baseline,
+                "guard": validate_transition(
+                    baseline,
+                    baseline,
+                    commander.model_dump(),
+                    request.budget_usd,
+                ),
+            }
         from sabermetrics.intelligence.access import engine_access
 
         self._intelligence["engine_access"] = engine_access(
