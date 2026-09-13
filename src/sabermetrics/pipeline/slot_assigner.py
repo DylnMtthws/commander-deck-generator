@@ -121,6 +121,11 @@ def _classify_card_role(card: dict, llm_role: str | None = None) -> SlotRole:
 
     Uses LLM-assigned role if available, otherwise heuristic detection.
     """
+    # A current route-policy veto cannot be undone by generic draw heuristics.
+    draw_blocked = card.get("_draw_route_blocked") is True
+    if draw_blocked and llm_role == "draw":
+        llm_role = None
+
     # Trust LLM classification if provided
     if llm_role and llm_role in ("ramp", "draw", "removal", "wincon", "utility", "land", "other"):
         return llm_role
@@ -154,7 +159,7 @@ def _classify_card_role(card: dict, llm_role: str | None = None) -> SlotRole:
         "draw" in oracle_text and "card" in oracle_text,
         "look at the top" in oracle_text and "library" in oracle_text,
     ]
-    if any(draw_indicators):
+    if any(draw_indicators) and not draw_blocked:
         return "draw"
 
     # Removal detection

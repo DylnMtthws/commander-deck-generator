@@ -638,6 +638,15 @@ class DeckBuilder:
         metrics["simulate"] = time.time() - t
 
         # --- Stage 8: Synthesis + Classify + Persist ---
+        from sabermetrics.intelligence.draw_route_policy import audit_assignments
+        from sabermetrics.intelligence.experiment import current as route_policy
+
+        self._intelligence["draw_routes"] = audit_assignments(
+            all_assignments,
+            commander.model_dump(mode="json"),
+            request.power_target,
+            enforce=route_policy().draw_package_policy == "routes",
+        )
         self._trace_candidates("final", [a.card for a in all_assignments])
         if "upstream" in self._intelligence:
             from sabermetrics.intelligence.function_guard import validate_transition
@@ -1793,6 +1802,7 @@ class DeckBuilder:
                 already_placed=placed_cards(),
                 role_tag_pool=_pool_by_role("draw"),
                 power_target=request.power_target,
+                commander=commander.model_dump(mode="json"),
             )
         self._trace_candidates("draw_selected", [a.card for a in draw])
         if hasattr(draw_gen, "selection_receipt"):
@@ -1979,6 +1989,26 @@ class DeckBuilder:
         # role_targets steer greedy to the under-served roles first.
         # (reserved_count is now implicit in len(infrastructure).)
         diff_slots = max(0, 99 - len(infrastructure))
+        from sabermetrics.intelligence.experiment import current as route_policy
+
+        if route_policy().draw_package_policy == "routes":
+            from sabermetrics.intelligence.draw_route_policy import (
+                audit_assignments,
+                constrain_candidates,
+            )
+
+            self._intelligence["draw_route_role_changes"] = constrain_candidates(
+                candidates,
+                [a.card for a in infrastructure],
+                commander.model_dump(mode="json"),
+                request.power_target,
+            )
+            self._intelligence["infrastructure_draw_routes"] = audit_assignments(
+                infrastructure,
+                commander.model_dump(mode="json"),
+                request.power_target,
+                enforce=True,
+            )
         self._trace_candidates("infrastructure", [a.card for a in infrastructure])
         diff_assignments = greedy_fill(
             shell=infrastructure,

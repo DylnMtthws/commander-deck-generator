@@ -1,0 +1,13 @@
+# Independent validation
+
+Final source passed2,304 tests, with21 skipped,54 warnings and14 subtests. The primary study completed8 full decks using pinned local embeddings; an earlier8 completed decks used the logged zero-embedding fallback and remain separate degraded-feature controls. No generation model calls were sent. Ten failed readiness/profile preflight attempts and two interrupted embedding-cache attempts are preserved separately and are not completed builds.
+
+Primary source hash: `ab1fa88904aae918ed4423ce0acd2b35557355ac37066ec874e52f9e2eb52f19`. Original data hash: `3592bf8f2c5ef7a51b602b118e32b08d7da2375f29e6b620bba2a3d7462fee52`. Embedding revision: `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`; weight hash `53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db`. Exact persisted profile hashes match within every pair. Refreshed Vivi evidence prevents assuming historical baseline identity; evaluation compares the new paired arms.
+
+All8 primary builds have zero hard, role, transition-integrity or cumulative-preservation failures. They contain no embedding fallback or blocked generation-call attempt. Current/routes elapsed seconds: Vivi55.606/55.605; Krenko16.594/16.694; Giada26.247/26.249; Lathril28.770/28.729. These small deterministic samples are not a latency benchmark or win-rate estimate.
+
+The demonstrated improvement is precise: Lathril's unsupported Shoreline Salvager and non-drawing Nafs Asp no longer receive DRAW-slot credit. Both cards remain in the deck as utility; all four pairs have identical final membership. Real embeddings reproduce both entering greedy at score0, indices67 and79 respectively. Both later optimizer stages reject their proposed changes. Thus the remaining bad selections originate in cheap fallback allocation and are not solved by role correction.
+
+Warden, Moldervine and Bombardment opportunities remain where present. Giada's Warden ETB route records printed/gross6 and conditional5 mana, without changing printedMV. Legacy credible/independent counts remain0/0 for Vivi, Krenko and Giada,2/2 for Lathril. Assigned-DRAW unverified counts remain9,3,10 and8 respectively. Every legacy draw-package audit remains unresolved. New route counts are separate diagnostics, not replacement evidence for those old metrics.
+
+Actual Opus Medium supplied a public-only review; its15 suggested scenarios were designs, not automatically executed tests. Corrections rejected a universal net-card formula, an unsupported blanket statement about symmetric draw, and the claim that creature deaths require sacrifice outlets. No general strategic promotion or deployment is supported by this bounded result.

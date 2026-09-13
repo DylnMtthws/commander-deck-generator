@@ -19,7 +19,9 @@ class Experiment:
     preserve_functions: bool = True
     swap_policy: Literal["current", "off", "preserve"] = "current"
     rebalance_policy: Literal["current", "off", "preserve"] = "current"
-    draw_package_policy: Literal["current", "budgeted", "coverage"] = "current"
+    draw_package_policy: Literal["current", "budgeted", "coverage", "routes"] = (
+        "current"
+    )
 
     def __post_init__(self):
         if (
@@ -52,9 +54,10 @@ class Experiment:
             "current",
             "budgeted",
             "coverage",
+            "routes",
         ):
             raise ValueError(
-                "Draw package policy must be current, budgeted or coverage"
+                "Draw package policy must be current, budgeted, coverage or routes"
             )
 
     def to_dict(self):
