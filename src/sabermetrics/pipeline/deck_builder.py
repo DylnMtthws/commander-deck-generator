@@ -33,6 +33,8 @@ change than this docstring.
 
 import json
 import logging
+import os
+import re
 import sqlite3
 import time
 import uuid
@@ -133,10 +135,10 @@ def _tokenize_engine_traits(raw_traits: list[str]) -> list[str]:
     for trait in raw_traits:
         trait_lower = trait.lower()
         for kw in MTG_KEYWORD_ABILITIES:
-            if kw in trait_lower:
+            if re.search(r"\b" + re.escape(kw) + r"\b", trait_lower):
                 tokens.add(kw)
         for type_kw in type_keywords:
-            if type_kw in trait_lower:
+            if re.search(r"\b" + re.escape(type_kw) + r"\b", trait_lower):
                 tokens.add(type_kw)
     return sorted(tokens)
 
@@ -252,6 +254,20 @@ class DeckBuilder:
         self._emit_progress("validate")
         commander = self._validate_request(request)
         self._commander = commander
+        self._selection_evidence = None
+        evidence_dir = os.getenv("SABER_SELECTION_EVIDENCE")
+        if evidence_dir:
+            from sabermetrics.intelligence.evidence import load_selection_evidence
+
+            self._selection_evidence = load_selection_evidence(
+                commander.model_dump(), request.power_target, Path(evidence_dir)
+            )
+            self._intelligence["selection_evidence"] = (
+                self._selection_evidence.model_dump(mode="json")
+            )
+            self._signals["commander_cohort"] = (
+                self._selection_evidence.status == "available"
+            )
         metrics["1_validate"] = time.time() - t
         metrics["validate"] = metrics["1_validate"]
 
@@ -268,6 +284,14 @@ class DeckBuilder:
         self._emit_progress("filter")
         candidates = self._filter_candidates(request, commander)
         candidates = self._load_role_tags(candidates)
+        evidence = getattr(self, "_selection_evidence", None)
+        if evidence is not None and evidence.status == "available":
+            rates = {k.casefold(): v for k, v in evidence.inclusion.items()}
+            synergies = {k.casefold(): v for k, v in evidence.synergy.items()}
+            for card in candidates:
+                card["_selection_evidence_available"] = True
+                card["_selection_inclusion"] = rates.get(card["name"].casefold(), 0.0)
+                card["_selection_synergy"] = synergies.get(card["name"].casefold(), 0.0)
         metrics["3_filter"] = time.time() - t
         metrics["filter"] = metrics["3_filter"]
         self._stage_counts["candidates_after_filter"] = len(candidates)
@@ -283,7 +307,9 @@ class DeckBuilder:
         from sabermetrics.intelligence.strategy import make_plan, reserve_plan
 
         candidates = [annotate(c) for c in candidates if not facts_for(c).exclusion]
-        self._strategy_plan = make_plan(commander.model_dump(), request.user_intent)
+        self._strategy_plan = make_plan(
+            commander.model_dump(), request.user_intent, request.power_target
+        )
         self._strategy_reserved = reserve_plan(
             self._strategy_plan, candidates, request.budget_usd
         )
@@ -335,6 +361,29 @@ class DeckBuilder:
                     roles.remove("wincon")
                     c["role_tags"] = json.dumps(roles or ["utility"])
         metrics["score"] = time.time() - t
+        from sabermetrics.intelligence.experiment import current as draw_experiment
+
+        self._draw_enabled = draw_experiment().draw_selection
+        self._function_guard_enabled = (
+            self._draw_enabled and draw_experiment().preserve_functions
+        )
+        # No automatic replacement when the policy cannot value competitive
+        # engines or commander-based toughness/defender card advantage.
+        self._draw_audit_only = (
+            request.power_target >= 4 or "defender" in commander.oracle_text.lower()
+        )
+        self._guard_candidates = (
+            candidates
+            if self._function_guard_enabled and not self._draw_audit_only
+            else []
+        )
+        self._draw_candidates = (
+            candidates
+            if self._draw_enabled
+            and not self._draw_audit_only
+            and not self._function_guard_enabled
+            else []
+        )
         candidates = self._pareto_filter(candidates)
         metrics["4_pareto"] = time.time() - t
         self._stage_counts["candidates_after_pareto"] = len(candidates)
@@ -416,6 +465,16 @@ class DeckBuilder:
             len(reserved),
             len(engine_reserved),
         )
+        if request.power_target == 5:
+            # Auto-includes may compete; only verified packages and strong
+            # cohort-backed selections retain unconditional swap protection.
+            package_names = set(self._strategy_names) | set(self._engine_protect_names)
+            corroborated = {
+                a.card["name"]
+                for a in infrastructure
+                if a.card.get("_selection_inclusion", 0) >= 0.70
+            }
+            self._protected_names &= package_names | corroborated
         self._trace_engine_snapshot("infrastructure", infrastructure)
 
         # --- Stage 5+6: Synergy optimizer (role targets + matrix + greedy + swap) ---
@@ -459,6 +518,35 @@ class DeckBuilder:
         # (Stage 7 budget rebalancing now runs inside _optimize_differentiators,
         # where the synergy matrix and role targets it evaluates against live.)
 
+        # Mechanically supported draw repair inspects the full legal scored pool,
+        # independent of legacy slot labels. Newly selected cards do not inherit
+        # an LLM-review pass; the deterministic scope is recorded explicitly.
+        if self._draw_candidates:
+            from sabermetrics.intelligence.draw_selection import repair as repair_draw
+            from sabermetrics.pipeline.slot_assigner import SlotAssignment
+
+            fixed, receipt = repair_draw(
+                [a.card for a in all_assignments],
+                self._draw_candidates,
+                commander.model_dump(),
+                request.budget_usd,
+                request.power_target,
+                protected=set(self._protected_names or ())
+                | set(getattr(self, "_engine_protect_names", ()) or ()),
+                type_floors=template.type_floors,
+            )
+            old = {a.card["name"]: a for a in all_assignments}
+            all_assignments = [
+                (
+                    old[c["name"]].model_copy(update={"card": c})
+                    if c["name"] in old
+                    else SlotAssignment(card=c, slot_role="draw", score=0.0)
+                )
+                for c in fixed
+            ]
+            self._intelligence["draw_selection"] = receipt
+            self._trace_engine_snapshot("draw_selection", all_assignments)
+
         # --- Stage 7b: Enforce Commander legality as a hard invariant ---
         all_assignments = self._enforce_legality(
             all_assignments,
@@ -475,6 +563,62 @@ class DeckBuilder:
             all_assignments, commander.model_dump()
         )
         self._intelligence["simulation"] = simulation
+
+        # The guarded experiment starts from the completed baseline, AFTER every
+        # selection-changing stage. Early reservation is disabled in this mode.
+        # Narrative and persistence below do not select replacements.
+        if self._guard_candidates:
+            from sabermetrics.intelligence.function_guard import guarded_repair
+            from sabermetrics.pipeline.slot_assigner import SlotAssignment
+
+            fixed, receipt = guarded_repair(
+                [a.card for a in all_assignments],
+                self._guard_candidates,
+                commander.model_dump(),
+                request.budget_usd,
+                request.power_target,
+                protected=set(self._protected_names or ())
+                | set(getattr(self, "_engine_protect_names", ()) or ()),
+            )
+            old = {a.card["name"]: a for a in all_assignments}
+            all_assignments = [
+                (
+                    old[c["name"]].model_copy(update={"card": c})
+                    if c["name"] in old
+                    else SlotAssignment(card=c, slot_role=_heuristic_role(c), score=0.0)
+                )
+                for c in fixed
+            ]
+            self._intelligence["draw_selection"] = receipt
+            self._trace_engine_snapshot("function_guard", all_assignments)
+            if receipt.get("guard", {}).get("changed"):
+                simulation["scope_note"] = (
+                    "Mana probe preceded proved draw-spell substitutions; no mana-source changes were made."
+                )
+        elif self._function_guard_enabled:
+            from copy import deepcopy
+
+            from sabermetrics.intelligence.function_guard import validate_transition
+
+            baseline = deepcopy([a.card for a in all_assignments])
+            self._intelligence["draw_selection"] = {
+                "status": "unresolved",
+                "mode": "audit_only",
+                "decisions": [],
+                "reason": "Automatic changes disabled in this strategy context.",
+                "baseline_cards": baseline,
+                "guard": validate_transition(
+                    baseline,
+                    baseline,
+                    commander.model_dump(),
+                    request.budget_usd,
+                ),
+            }
+        from sabermetrics.intelligence.access import engine_access
+
+        self._intelligence["engine_access"] = engine_access(
+            [a.card for a in all_assignments], self._strategy_plan
+        )
         metrics["simulate"] = time.time() - t
 
         # --- Stage 8: Synthesis + Classify + Persist ---
@@ -508,6 +652,14 @@ class DeckBuilder:
         )
         self._engine_admission.status = engine_status
         self._trace_engine_snapshot("final", all_assignments)
+        selected_names = {a.card["name"] for a in all_assignments}
+        for name in self._tracer.watchlist:
+            self._tracer.record(
+                card_name=name,
+                stage="final_selection",
+                action="retained" if name in selected_names else "excluded",
+                reason="Final deck membership; inspect earlier stages for cause",
+            )
 
         role_targets_counts = {}
         for r, t in (opt_metrics.get("role_targets") or {}).items():
@@ -561,6 +713,37 @@ class DeckBuilder:
             commander_oracle=commander.oracle_text,
             legality_backfill=self._legality_backfill,
         )
+        if self._draw_enabled:
+            from sabermetrics.intelligence.draw_selection import audit as audit_draw
+            from sabermetrics.pipeline.quality import QualityItem
+
+            final_draw = audit_draw(
+                [a.card for a in all_assignments],
+                commander.model_dump(),
+                request.power_target,
+            )
+            receipt = self._intelligence.setdefault(
+                "draw_selection",
+                {
+                    "status": "unresolved",
+                    "mode": "audit_only",
+                    "reason": "Automatic intervention disabled for unmodeled high-power or defender strategy context.",
+                    "decisions": [],
+                },
+            )
+            receipt["final"] = final_draw
+            if final_draw["credible"] < receipt.get("target", 99) or final_draw[
+                "independent"
+            ] < receipt.get("independent_target", 99):
+                receipt["status"] = "unresolved"
+                acceptance.warnings.append(
+                    QualityItem(
+                        severity="warning",
+                        code="draw_package_unresolved",
+                        message="Supported card-advantage requirement remains unresolved; this deck has not passed draw-package validation.",
+                    )
+                )
+
         if acceptance.failures:
             raise FatalError(
                 "Final deck validation failed: "
@@ -571,6 +754,11 @@ class DeckBuilder:
 
         plan = assess_plan(self._strategy_plan, [a.card for a in all_assignments])
         findings = semantic_findings([a.card for a in all_assignments])
+        from sabermetrics.intelligence.audit import summarize_selection_audit
+
+        self._intelligence["selection_audit"] = summarize_selection_audit(
+            [e.model_dump() for e in self._tracer._events]
+        )
         self._intelligence.update(
             {
                 "version": "generation-intelligence.v1",
@@ -604,7 +792,7 @@ class DeckBuilder:
         if any(f["severity"] == "failure" for f in findings):
             raise FatalError("Final deck contains unsupported card prerequisites")
         self._quality_warnings = acceptance.as_rationale_list()
-        if plan["archetype"] == "landfall":
+        if plan["requirements"]:
             self._quality_warnings = [
                 w for w in self._quality_warnings if w["code"] != "intent_unverified"
             ]
@@ -613,7 +801,7 @@ class DeckBuilder:
                     {
                         "severity": "warning",
                         "code": "strategy_partial",
-                        "message": "Landfall requirements remain unmet: "
+                        "message": "Strategy requirements remain unmet: "
                         + ", ".join(plan["missing"]),
                     }
                 )
@@ -783,9 +971,17 @@ class DeckBuilder:
         from sabermetrics.reasoning.profiler import ProfileManager, ProfileRequest
 
         manager = ProfileManager(self.db_path)
+        evidence = getattr(self, "_selection_evidence", None)
+        if evidence is not None and evidence.status == "available":
+            manager.selection_evidence = evidence.model_dump(mode="json")
         profile_request = ProfileRequest(
             commander_id=request.commander_id,
             user_intent=request.user_intent,
+            evidence_key=(
+                evidence.cohort + ":" + str(evidence.retrieved_at)
+                if evidence is not None and evidence.status == "available"
+                else None
+            ),
         )
         return manager.generate_profile(profile_request)
 
@@ -965,6 +1161,7 @@ class DeckBuilder:
             )
 
         context = ScoringContext(
+            power_target=request.power_target,
             commander_id=commander.id,
             commander_name=commander.name,
             commander_colors=commander.color_identity,
@@ -1051,7 +1248,10 @@ class DeckBuilder:
                 card["_empirical_reliable"] = card_name_lower in empirical.reliable
             result = compute_cvar(card, context, self.db_path)
             card["_cvar_result"] = result.model_dump()
-            card["_cvar_score"] = result.composite_score
+            from sabermetrics.intelligence.selection import evidence_score
+
+            card["_selection_base_score"] = result.composite_score
+            card["_cvar_score"] = evidence_score(card, result.composite_score)
             # SME value-inversion rule: in an aura-engine deck, any 1-2
             # mana Aura is "one mana to stop an attacker" -- playable
             # regardless of generic quality. Generic scoring rates Crippling
@@ -1086,210 +1286,19 @@ class DeckBuilder:
         return candidates
 
     def _pareto_filter(self, candidates: list[dict]) -> list[dict]:
-        """Stage 2: Remove dominated cards within each role.
-
-        A card is dominated if another card in the same role has both
-        a higher CVAR score and a lower price.
-
-        Auto-include staples (from auto_include_cards.yaml) are never
-        eliminated, even if dominated — they are kept unconditionally
-        so infrastructure generators can find them.
-        """
-        from sabermetrics.config import settings
+        from sabermetrics.intelligence.selection import retain_candidates
         from sabermetrics.pipeline.generators.ramp import _load_auto_includes
 
-        # Load auto-include names to protect from Pareto elimination
-        auto_includes, _ = _load_auto_includes()
-        auto_include_names: set[str] = set()
-        for section_entries in auto_includes.values():
-            if not isinstance(section_entries, list):
-                continue
-            for entry in section_entries:
-                auto_include_names.add(entry["name"])
-        auto_include_names |= set(getattr(self, "_engine_protect_names", None) or ())
-        auto_include_names |= set(getattr(self, "_strategy_names", None) or ())
-
-        # Group by primary role
-        role_groups: dict[str, list[dict]] = {}
-        for card in candidates:
-            role_tags_raw = card.get("role_tags", "[]")
-            if isinstance(role_tags_raw, str):
-                try:
-                    role_tags = json.loads(role_tags_raw)
-                except (json.JSONDecodeError, TypeError):
-                    role_tags = ["utility"]
-            else:
-                role_tags = role_tags_raw or ["utility"]
-
-            primary_role = role_tags[0] if role_tags else "utility"
-            if primary_role not in role_groups:
-                role_groups[primary_role] = []
-            role_groups[primary_role].append(card)
-
-        # Pareto filter within each role
-        kept: list[dict] = []
-        removed = 0
-        # Minimum candidates to keep per non-land role (ensures enough
-        # diversity for infrastructure generators and differentiator fill)
-        min_per_role = 30
-
-        for role, group in role_groups.items():
-            if role == "land":
-                kept.extend(group)  # Don't Pareto-filter lands
-                continue
-
-            # Sort by CVAR descending
-            group.sort(key=lambda c: c.get("_cvar_score", 0), reverse=True)
-
-            # Keep card if no other card strictly dominates it
-            # Auto-include staples are never eliminated
-            frontier: list[dict] = []
-            for card in group:
-                card_name = card.get("name", "")
-                if card_name in auto_include_names:
-                    frontier.append(card)
-                    engine_hit = card_name in (
-                        getattr(self, "_engine_protect_names", set()) or set()
-                    )
-                    self._tracer.record(
-                        card_name=card_name,
-                        stage="pareto",
-                        action="protected",
-                        card_id=card.get("id"),
-                        score=card.get("_cvar_score"),
-                        reason=(
-                            "engine package exempt from pruning"
-                            if engine_hit
-                            else "auto-include exempt"
-                        ),
-                        force=engine_hit,
-                    )
-                    continue
-
-                cvar = card.get("_cvar_score", 0)
-                price = float(card.get("price_usd", 0) or 0)
-
-                dominated = False
-                dominator_name = ""
-                edhrec_saved = False
-                emp_saved = False
-                card_edhrec = card.get("edhrec_inclusion_pct", 0.0)
-                card_emp = card.get("_empirical_inclusion", 0.0)
-                card_emp_reliable = card.get("_empirical_reliable", False)
-
-                for f_card in frontier:
-                    f_cvar = f_card.get("_cvar_score", 0)
-                    f_price = float(f_card.get("price_usd", 0) or 0)
-                    if (
-                        f_cvar >= cvar
-                        and f_price <= price
-                        and (f_cvar > cvar or f_price < price)
-                    ):
-                        # Empirical protection: a card common in the target
-                        # variant's real decks earns its slot outright, whatever
-                        # dominates it (per-variant, sharper than EDHREC).
-                        if (
-                            card_emp_reliable
-                            and card_emp >= _EMPIRICAL_PROTECT_MIN_INCLUSION
-                        ):
-                            emp_saved = True
-                            continue  # This frontier card can't dominate; check others
-                        # EDHREC protection: a card with strong empirical inclusion
-                        # cannot be dominated by one the community doesn't use.
-                        f_edhrec = f_card.get("edhrec_inclusion_pct", 0.0)
-                        if card_edhrec >= 30.0 and (card_edhrec - f_edhrec) >= 25.0:
-                            edhrec_saved = True
-                            continue  # This frontier card can't dominate; check others
-                        dominated = True
-                        dominator_name = f_card.get("name", "")
-                        break
-
-                if not dominated:
-                    frontier.append(card)
-                    if emp_saved:
-                        self._tracer.record(
-                            card_name=card_name,
-                            stage="pareto",
-                            action="protected",
-                            card_id=card.get("id"),
-                            score=cvar,
-                            reason=f"empirical protected ({card_emp * 100:.0f}% "
-                            "of variant decks)",
-                        )
-                    elif edhrec_saved:
-                        self._tracer.record(
-                            card_name=card_name,
-                            stage="pareto",
-                            action="protected",
-                            card_id=card.get("id"),
-                            score=cvar,
-                            reason=f"EDHREC protected ({card_edhrec:.0f}% inclusion)",
-                        )
-                    else:
-                        self._tracer.record(
-                            card_name=card_name,
-                            stage="pareto",
-                            action="considered",
-                            card_id=card.get("id"),
-                            score=cvar,
-                            reason="survived Pareto",
-                        )
-                else:
-                    removed += 1
-                    self._tracer.record(
-                        card_name=card_name,
-                        stage="pareto",
-                        action="rejected",
-                        card_id=card.get("id"),
-                        score=cvar,
-                        reason=f"dominated by {dominator_name} (cvar={f_cvar:.3f}, price=${f_price:.2f})",
-                    )
-
-            # Ensure minimum per-role diversity: if frontier is too small,
-            # re-add top CVAR cards that were dominated
-            if len(frontier) < min_per_role and len(group) > len(frontier):
-                frontier_ids = {id(c) for c in frontier}
-                for card in group:
-                    if len(frontier) >= min_per_role:
-                        break
-                    if id(card) not in frontier_ids:
-                        frontier.append(card)
-                        frontier_ids.add(id(card))
-
-            kept.extend(frontier)
-
-        # Global floor: ensure enough non-land candidates total
-        non_land_kept = [
-            c for c in kept if "land" not in (c.get("type_line") or "").lower()
-        ]
-        min_non_land = max(
-            settings.pipeline.structural_filter_target,
-            settings.llm.max_candidates_for_llm_fit * 3,
-        )
-        if len(non_land_kept) < min_non_land:
-            # Re-add top non-land cards by CVAR
-            non_land_all = [
-                c
-                for c in candidates
-                if "land" not in (c.get("type_line") or "").lower()
-            ]
-            non_land_all.sort(key=lambda c: c.get("_cvar_score", 0), reverse=True)
-            kept_ids = {id(c) for c in kept}
-            for card in non_land_all:
-                if len(non_land_kept) >= min_non_land:
-                    break
-                if id(card) not in kept_ids:
-                    kept.append(card)
-                    non_land_kept.append(card)
-                    kept_ids.add(id(card))
-
-        logger.info(
-            "Pareto filter: %d kept, %d removed (across %d roles)",
-            len(kept),
-            removed,
-            len(role_groups),
-        )
-        return kept
+        auto, _ = _load_auto_includes()
+        protected = {
+            e["name"]
+            for values in auto.values()
+            if isinstance(values, list)
+            for e in values
+        }
+        protected |= set(getattr(self, "_strategy_names", ()) or ())
+        protected |= set(getattr(self, "_engine_protect_names", ()) or ())
+        return retain_candidates(candidates, protected, getattr(self, "_tracer", None))
 
     def _derive_template(self, profile, request):
         """Stage 3: Derive deck template from profile.
@@ -1306,13 +1315,57 @@ class DeckBuilder:
             if empirical is not None and empirical.reliable
             else None
         )
-        return derive_deck_template(
+        template = derive_deck_template(
             profile=profile,
             budget=request.budget_usd,
             power_target=request.power_target,
             db_path=self.db_path,
             empirical_composition=composition,
         )
+        evidence = getattr(self, "_selection_evidence", None)
+        if (
+            evidence is not None
+            and evidence.status == "available"
+            and evidence.sample_size >= 50
+        ):
+            comp = evidence.composition
+            land_estimate = int(comp.get("land", template.land_count))
+            # Observed composition is a target, never a simulated source count.
+            floor = 24 if request.power_target == 5 else 30
+            template.land_count = max(floor, min(42, land_estimate))
+            template.type_targets = {
+                t: int(comp[t])
+                for t in (
+                    "creature",
+                    "artifact",
+                    "enchantment",
+                    "instant",
+                    "sorcery",
+                    "planeswalker",
+                )
+                if t in comp
+            }
+            template.creature_density = max(
+                0.0,
+                min(1.0, comp.get("creature", 25) / max(1, 99 - template.land_count)),
+            )
+            if request.power_target == 5 and comp.get("creature", 30) < 20:
+                # Broad wipes are not an independent quota for a fast, low-body
+                # competitive shell; spot interaction remains required.
+                template.board_wipe_count = 0
+                template.ramp_count = (
+                    5  # Repeatable sources; burst mana is a separate engine ingredient.
+                )
+                template.removal_count = max(template.removal_count, 8)
+            infra = (
+                template.land_count
+                + template.ramp_count
+                + template.draw_count
+                + template.removal_count
+                + template.board_wipe_count
+            )
+            template.differentiator_slots = max(10, min(45, 99 - infra))
+        return template
 
     def _trace_engine_admission(self) -> None:
         """Record every engine-shaped card at admission, including misses."""
@@ -1683,14 +1736,33 @@ class DeckBuilder:
 
         # 2. Draw
         draw_gen = DrawPackageGenerator(self.db_path)
-        draw = draw_gen.generate(
-            color_identity=colors,
-            target_count=template.draw_count,
-            budget_remaining=role_budget(0.10),
-            template=template,
-            already_placed=placed_cards(),
-            role_tag_pool=_pool_by_role("draw"),
-        )
+        if getattr(self, "_draw_candidates", None):
+            from sabermetrics.intelligence.draw_selection import select_package
+
+            package = select_package(
+                self._draw_candidates,
+                placed_cards(),
+                commander.model_dump(),
+                role_budget(0.15),
+                template.draw_count,
+                request.power_target,
+            )
+            draw = [
+                SlotAssignment(
+                    card=c, slot_role="draw", score=float(c.get("_cvar_score") or 0)
+                )
+                for c in package
+            ]
+            self._protected_names |= {c["name"] for c in package}
+        else:
+            draw = draw_gen.generate(
+                color_identity=colors,
+                target_count=template.draw_count,
+                budget_remaining=role_budget(0.10),
+                template=template,
+                already_placed=placed_cards(),
+                role_tag_pool=_pool_by_role("draw"),
+            )
         all_assignments.extend(draw)
         budget_used += sum(float(a.card.get("price_usd", 0) or 0) for a in draw)
         _trace_infra(draw, "infra_draw")
@@ -1839,10 +1911,7 @@ class DeckBuilder:
             target.min_count = max(0, count - 2)
             target.max_count = count + 4
 
-        if (
-            getattr(self, "_strategy_plan", None)
-            and self._strategy_plan.archetype == "landfall"
-        ):
+        if getattr(self, "_strategy_plan", None) and self._strategy_plan.requirements:
             for role, count in {
                 "wincon": 3,
                 "tutor": 2,
@@ -2120,7 +2189,7 @@ class DeckBuilder:
                 )
                 assignments[idx] = SlotAssignment(
                     card=incoming,
-                    slot_role=outgoing.slot_role,
+                    slot_role=_heuristic_role(incoming),
                     score=score,
                     alternatives=[],
                 )
@@ -2336,11 +2405,30 @@ class DeckBuilder:
                 self._review_failed = True
         # Bind verdicts by identity rather than assuming model response order.
         verdicts = {c.get("id", c.get("name")): v for c, v in results}
+        from sabermetrics.intelligence.review import contradictions
+
+        commander_facts = getattr(self, "_commander", None)
+        commander_data = (
+            commander_facts.model_dump() if commander_facts is not None else {}
+        )
+        for card in to_review:
+            verdict = verdicts.get(card.get("id", card.get("name")))
+            if verdict is None:
+                card["_fit_review_status"] = "unresolved"
+                continue
+            errors = contradictions(card, verdict.reasoning, commander_data)
+            card["_fit_review_status"] = "unresolved" if errors else "reviewed"
+            card["_fit_score"] = verdict.fit_score
+            card["_fit_reasoning"] = verdict.reasoning
+            if errors:
+                self._review_failed = True
+                card["_fit_grounding_errors"] = errors
         passed = [
             c
             for c in menu
             if c.get("id", c.get("name")) in verdicts
             and verdicts[c.get("id", c.get("name"))].fit_score > 3
+            and c.get("_fit_review_status") == "reviewed"
         ]
         if hasattr(self, "_intelligence"):
             self._intelligence["review"] = {
@@ -2404,6 +2492,7 @@ class DeckBuilder:
                 replaced = True
                 break
             if not replaced:
+                old["_fit_review_status"] = "unresolved"
                 self._review_failed = True
                 self._tracer.record(
                     card_name=old.get("name", ""),
@@ -2531,6 +2620,18 @@ class DeckBuilder:
                 if front == back:
                     name = front
             if not name or name == commander.name:
+                continue
+            from sabermetrics.intelligence.eligibility import main_deck_eligible
+
+            if not main_deck_eligible(a.card):
+                if getattr(self, "_tracer", None) is not None:
+                    self._tracer.record(
+                        card_name=name,
+                        stage="legality",
+                        action="rejected",
+                        reason="not a main-deck card type",
+                        force=True,
+                    )
                 continue
             if not _is_basic(name):
                 if name in seen:
@@ -2741,6 +2842,16 @@ class DeckBuilder:
                 name=card_data.get("name", ""),
                 mana_cost=card_data.get("mana_cost"),
                 cmc=float(card_data.get("cmc", 0)),
+                power=(
+                    str(card_data["power"])
+                    if card_data.get("power") is not None
+                    else None
+                ),
+                toughness=(
+                    str(card_data["toughness"])
+                    if card_data.get("toughness") is not None
+                    else None
+                ),
                 type_line=card_data.get("type_line", ""),
                 oracle_text=card_data.get("oracle_text"),
                 color_identity=ci,
@@ -2769,7 +2880,8 @@ class DeckBuilder:
                     cvar_score=assignment.score,
                     sub_scores=sub_scores,
                     llm_fit=LLMFit(
-                        score=max(1, min(10, round(assignment.score * 10))),
+                        score=max(1, min(10, int(card_data.get("_fit_score", 1)))),
+                        status=card_data.get("_fit_review_status", "unreviewed"),
                         reasoning=card_data.get("_fit_reasoning", "Auto-scored"),
                     ),
                     alternatives=assignment.alternatives,
@@ -2895,7 +3007,12 @@ class DeckBuilder:
                         "name": dc.card.name,
                         "slot_role": dc.slot_role,
                         "cvar_score": dc.cvar_score,
-                        "fit_score": dc.llm_fit.score,
+                        "fit_score": (
+                            dc.llm_fit.score
+                            if dc.llm_fit.status == "reviewed"
+                            else None
+                        ),
+                        "fit_review_status": dc.llm_fit.status,
                         "reasoning": dc.llm_fit.reasoning,
                         "alternatives": dc.alternatives,
                     }
@@ -3035,8 +3152,14 @@ def _is_ramp(type_line: str, oracle_text: str) -> bool:
 
 def _heuristic_role(card: dict) -> str:
     """Classify card role by heuristics when LLM is unavailable."""
+    from sabermetrics.intelligence.commander_substitutions import extended_profile
     from sabermetrics.pipeline.slot_assigner import _classify_card_role
 
+    # Complete creature-targetable damage evidence must survive an incomplete
+    # cached facts record, including after a guarded replacement is persisted.
+    profile = extended_profile(card)
+    if profile and profile["family"] == "damage":
+        return "removal"
     if "_facts" in card:
         roles = card["_facts"]["roles"]
         for role in ("land", "ramp", "draw", "removal", "protection", "wincon"):

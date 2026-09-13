@@ -9,7 +9,7 @@ class DeckTemplate(BaseModel):
     Replaces static TARGET_COMPOSITIONS with profile-driven derivation.
     """
 
-    land_count: int = Field(ge=30, le=42)
+    land_count: int = Field(ge=20, le=42)
     ramp_count: int = Field(ge=5, le=18)
     draw_count: int = Field(ge=3, le=15)
     removal_count: int = Field(ge=3, le=15)

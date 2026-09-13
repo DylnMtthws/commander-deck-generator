@@ -1,0 +1,114 @@
+{
+  "cards": [
+    {
+      "oracle_id": "a9d288b8-cdc1-4e55-a0c9-d6edfc95e65d",
+      "name": "Shock",
+      "mana_cost": "{R}",
+      "cmc": 1.0,
+      "type_line": "Instant",
+      "oracle_text": "Shock deals 2 damage to any target.",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "4457ed35-7c10-48c8-9776-456485fdf070",
+      "name": "Lightning Bolt",
+      "mana_cost": "{R}",
+      "cmc": 1.0,
+      "type_line": "Instant",
+      "oracle_text": "Lightning Bolt deals 3 damage to any target.",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "ac2086fe-98ee-4280-9c7c-c5c2d6548a8b",
+      "name": "Burst Lightning",
+      "mana_cost": "{R}",
+      "cmc": 1.0,
+      "type_line": "Instant",
+      "oracle_text": "Kicker {4} (You may pay an additional {4} as you cast this spell.)\nBurst Lightning deals 2 damage to any target. If this spell was kicked, it deals 4 damage instead.",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "5ffc1e77-152b-4a82-8ea8-2c79cc31d5ef",
+      "name": "Play with Fire",
+      "mana_cost": "{R}",
+      "cmc": 1.0,
+      "type_line": "Instant",
+      "oracle_text": "Play with Fire deals 2 damage to any target. If a player is dealt damage this way, scry 1. (Look at the top card of your library. You may put that card on the bottom.)",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "d211c03a-03cd-40c5-b7c8-ada352fd01a6",
+      "name": "Galvanic Blast",
+      "mana_cost": "{R}",
+      "cmc": 1.0,
+      "type_line": "Instant",
+      "oracle_text": "Galvanic Blast deals 2 damage to any target.\nMetalcraft \u2014 Galvanic Blast deals 4 damage instead if you control three or more artifacts.",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "1cb0610b-a731-42c2-b93f-0a29f63cebf4",
+      "name": "Thrill of Possibility",
+      "mana_cost": "{1}{R}",
+      "cmc": 2.0,
+      "type_line": "Instant",
+      "oracle_text": "As an additional cost to cast this spell, discard a card.\nDraw two cards.",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "c11e84a1-dbda-429b-8cd6-fd0deaefc689",
+      "name": "Demand Answers",
+      "mana_cost": "{1}{R}",
+      "cmc": 2.0,
+      "type_line": "Instant",
+      "oracle_text": "As an additional cost to cast this spell, sacrifice an artifact or discard a card.\nDraw two cards.",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "498c10c9-253d-4b15-b48c-1509381b17e8",
+      "name": "Unexpected Windfall",
+      "mana_cost": "{2}{R}{R}",
+      "cmc": 4.0,
+      "type_line": "Instant",
+      "oracle_text": "As an additional cost to cast this spell, discard a card.\nDraw two cards and create two Treasure tokens. (They're artifacts with \"{T}, Sacrifice this token: Add one mana of any color.\")",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "a5cbd257-c836-493e-bb1a-76242619dea2",
+      "name": "Big Score",
+      "mana_cost": "{3}{R}",
+      "cmc": 4.0,
+      "type_line": "Instant",
+      "oracle_text": "As an additional cost to cast this spell, discard a card.\nDraw two cards and create two Treasure tokens. (They're artifacts with \"{T}, Sacrifice this token: Add one mana of any color.\")",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "bd9e416a-89b3-4912-be9b-49fce6a93dc9",
+      "name": "Manalith",
+      "mana_cost": "{3}",
+      "cmc": 3.0,
+      "type_line": "Artifact",
+      "oracle_text": "{T}: Add one mana of any color.",
+      "color_identity": "[]",
+      "is_legal_in_99": 1
+    },
+    {
+      "oracle_id": "a2529491-7389-4cfa-92d2-145eda779603",
+      "name": "Darksteel Ingot",
+      "mana_cost": "{3}",
+      "cmc": 3.0,
+      "type_line": "Artifact",
+      "oracle_text": "Indestructible (Effects that say \"destroy\" don't destroy this artifact.)\n{T}: Add one mana of any color.",
+      "color_identity": "[]",
+      "is_legal_in_99": 1
+    }
+  ]
+}

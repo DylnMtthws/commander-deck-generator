@@ -1,0 +1,110 @@
+{
+  "cards": [
+    {
+      "oracle_id": "05849bd6-8f38-4031-be2b-e2aa03beb8cc",
+      "name": "Pongify",
+      "mana_cost": "{U}",
+      "cmc": 1.0,
+      "type_line": "Instant",
+      "oracle_text": "Destroy target creature. It can't be regenerated. Its controller creates a 3/3 green Ape creature token.",
+      "color_identity": [
+        "U"
+      ]
+    },
+    {
+      "oracle_id": "fae37e28-e137-4177-b973-fa8b4dd8f409",
+      "name": "Generous Gift",
+      "mana_cost": "{2}{W}",
+      "cmc": 3.0,
+      "type_line": "Instant",
+      "oracle_text": "Destroy target permanent. Its controller creates a 3/3 green Elephant creature token.",
+      "color_identity": [
+        "W"
+      ]
+    },
+    {
+      "oracle_id": "5fac139a-07d3-4e6c-98e3-d98b199f7a6f",
+      "name": "Young Pyromancer",
+      "mana_cost": "{1}{R}",
+      "cmc": 2.0,
+      "type_line": "Creature \u2014 Human Shaman",
+      "oracle_text": "Whenever you cast an instant or sorcery spell, create a 1/1 red Elemental creature token.",
+      "color_identity": [
+        "R"
+      ]
+    },
+    {
+      "oracle_id": "08becc07-28bc-4a2f-a6b0-28a2998d2f50",
+      "name": "Windfall",
+      "mana_cost": "{2}{U}",
+      "cmc": 3.0,
+      "type_line": "Sorcery",
+      "oracle_text": "Each player discards their hand, then draws cards equal to the greatest number of cards a player discarded this way.",
+      "color_identity": [
+        "U"
+      ]
+    },
+    {
+      "oracle_id": "a2373025-20c1-4416-91f7-e51f68dbd146",
+      "name": "Elven Ambush",
+      "mana_cost": "{3}{G}",
+      "cmc": 4.0,
+      "type_line": "Instant",
+      "oracle_text": "Create a 1/1 green Elf Warrior creature token for each Elf you control.",
+      "color_identity": [
+        "G"
+      ]
+    },
+    {
+      "oracle_id": "28ddc23c-5b0b-4747-9a33-6845acf27bec",
+      "name": "Elvish Harbinger",
+      "mana_cost": "{2}{G}",
+      "cmc": 3.0,
+      "type_line": "Creature \u2014 Elf Druid",
+      "oracle_text": "When this creature enters, you may search your library for an Elf card, reveal it, then shuffle and put that card on top.\n{T}: Add one mana of any color.",
+      "color_identity": [
+        "G"
+      ]
+    },
+    {
+      "oracle_id": "19015380-1332-4960-8cc6-0732009525a2",
+      "name": "Pearl Medallion",
+      "mana_cost": "{2}",
+      "cmc": 2.0,
+      "type_line": "Artifact",
+      "oracle_text": "White spells you cast cost {1} less to cast.",
+      "color_identity": []
+    },
+    {
+      "oracle_id": "13575cf9-65c1-4861-b21e-eb2155e07766",
+      "name": "Sensei's Divining Top",
+      "mana_cost": "{1}",
+      "cmc": 1.0,
+      "type_line": "Artifact",
+      "oracle_text": "{1}: Look at the top three cards of your library, then put them back in any order.\n{T}: Draw a card, then put this artifact on top of its owner's library.",
+      "color_identity": []
+    },
+    {
+      "oracle_id": "f8b17b89-26ce-4208-874a-9e1d66514640",
+      "name": "Dig Through Time",
+      "mana_cost": "{6}{U}{U}",
+      "cmc": 8.0,
+      "type_line": "Instant",
+      "oracle_text": "Delve (Each card you exile from your graveyard while casting this spell pays for {1}.)\nLook at the top seven cards of your library. Put two of them into your hand and the rest on the bottom of your library in any order.",
+      "color_identity": [
+        "U"
+      ]
+    },
+    {
+      "oracle_id": "5b6bdf5a-2742-4851-92cd-a857a3852836",
+      "name": "Treasure Cruise",
+      "mana_cost": "{7}{U}",
+      "cmc": 8.0,
+      "type_line": "Sorcery",
+      "oracle_text": "Delve (Each card you exile from your graveyard while casting this spell pays for {1}.)\nDraw three cards.",
+      "color_identity": [
+        "U"
+      ]
+    }
+  ]
+}

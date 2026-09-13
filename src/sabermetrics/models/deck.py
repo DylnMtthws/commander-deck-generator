@@ -41,6 +41,7 @@ class LLMFit(BaseModel):
     """LLM-assessed fit score for a card."""
 
     score: int = Field(ge=1, le=10)
+    status: str = "unreviewed"
     reasoning: str
 
 

@@ -1,0 +1,77 @@
+{
+  "source": "https://edhrec.com/commanders",
+  "observed_date": "2026-09-12",
+  "scope": "Default Top Commanders ranking as displayed; not a tournament-strength ranking",
+  "cases": [
+    {
+      "rank": 1,
+      "name": "Y'shtola, Night's Blessed",
+      "power": 2,
+      "budget": 100,
+      "intent": null
+    },
+    {
+      "rank": 2,
+      "name": "The Ur-Dragon",
+      "power": 4,
+      "budget": 1500,
+      "intent": null
+    },
+    {
+      "rank": 3,
+      "name": "Edgar Markov",
+      "power": 3,
+      "budget": 350,
+      "intent": null
+    },
+    {
+      "rank": 4,
+      "name": "Atraxa, Praetors' Voice",
+      "power": 4,
+      "budget": 750,
+      "intent": null
+    },
+    {
+      "rank": 5,
+      "name": "Krenko, Mob Boss",
+      "power": 1,
+      "budget": 50,
+      "intent": null
+    },
+    {
+      "rank": 6,
+      "name": "Vivi Ornitier",
+      "power": 5,
+      "budget": 5000,
+      "intent": "Turbo burn, cEDH, curiosity effects"
+    },
+    {
+      "rank": 7,
+      "name": "Kaalia of the Vast",
+      "power": 3,
+      "budget": 200,
+      "intent": null
+    },
+    {
+      "rank": 8,
+      "name": "Sauron, the Dark Lord",
+      "power": 4,
+      "budget": 1000,
+      "intent": null
+    },
+    {
+      "rank": 9,
+      "name": "Teval, the Balanced Scale",
+      "power": 3,
+      "budget": 150,
+      "intent": null
+    },
+    {
+      "rank": 10,
+      "name": "Fire Lord Azula",
+      "power": 5,
+      "budget": 2500,
+      "intent": null
+    }
+  ]
+}

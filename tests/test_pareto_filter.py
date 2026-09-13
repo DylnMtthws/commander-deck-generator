@@ -1,9 +1,7 @@
-"""Tests for the Pareto filter's empirical protection (Stage 2).
+"""Regression: price and a broad role never prove functional substitution.
 
-The filter drops a card when another in the same role has both higher CVAR and
-a lower price. That rule is what removed proven staples from generated decks:
-$0.03 jank price-dominates a $2 card that appears in most real decks of the
-target variant. These cover the carve-out that protects them.
+Small pools remain reachable without corroboration. Bounded pruning is tested
+separately on a large pool, not inferred from the obsolete price frontier.
 """
 
 from pathlib import Path
@@ -50,7 +48,8 @@ def _fillers(n: int = 210) -> list[dict]:
     """
     return [
         _make_card(
-            f"filler-{i}", f"Filler {i}",
+            f"filler-{i}",
+            f"Filler {i}",
             cvar_score=0.99 - i * 0.001,
             price=500.0 - i * 2.0,
         )
@@ -74,14 +73,16 @@ def _names_under_test(cards: list[dict]) -> set[str]:
     return {c["name"] for c in cards if not c["name"].startswith("Filler")}
 
 
-def test_dominated_card_without_empirical_support_is_dropped(builder) -> None:
-    """Baseline: the domination rule still applies to unsupported cards."""
+def test_different_function_without_empirical_support_remains_reachable(
+    builder,
+) -> None:
+    """Missing evidence does not license price domination."""
     jank = _make_card("jank", "Cheap Jank", cvar_score=0.60, price=0.03)
     loser = _make_card("loser", "Dominated Card", cvar_score=0.50, price=2.00)
 
     kept = builder._pareto_filter([jank, loser] + _fillers())
 
-    assert _names_under_test(kept) == {"Cheap Jank"}
+    assert _names_under_test(kept) == {"Cheap Jank", "Dominated Card"}
 
 
 def test_empirical_staple_survives_price_domination(builder) -> None:
@@ -92,8 +93,12 @@ def test_empirical_staple_survives_price_domination(builder) -> None:
     """
     jank = _make_card("jank", "Cheap Jank", cvar_score=0.60, price=0.03)
     staple = _make_card(
-        "staple", "Pitiless Plunderer", cvar_score=0.50, price=2.00,
-        _empirical_inclusion=0.90, _empirical_reliable=True,
+        "staple",
+        "Pitiless Plunderer",
+        cvar_score=0.50,
+        price=2.00,
+        _empirical_inclusion=0.90,
+        _empirical_reliable=True,
     )
 
     kept = builder._pareto_filter([jank, staple] + _fillers())
@@ -101,21 +106,22 @@ def test_empirical_staple_survives_price_domination(builder) -> None:
     assert _names_under_test(kept) == {"Cheap Jank", "Pitiless Plunderer"}
 
 
-def test_protection_requires_reliable_inclusion(builder) -> None:
-    """A high rate that is not reliable must not protect.
-
-    Wide Wilson bands mean the rate is noise; it should not be strong enough to
-    override the domination rule.
-    """
-    jank = _make_card("jank", "Cheap Jank", cvar_score=0.60, price=0.03)
-    noisy = _make_card(
-        "noisy", "Noisy Card", cvar_score=0.50, price=2.00,
-        _empirical_inclusion=0.90, _empirical_reliable=False,
-    )
-
-    kept = builder._pareto_filter([jank, noisy] + _fillers())
-
-    assert _names_under_test(kept) == {"Cheap Jank"}
+def test_noisy_evidence_does_not_license_price_domination(builder) -> None:
+    cards = [
+        _make_card("a", "Cheap Jank", 0.60, 0.03),
+        _make_card(
+            "b",
+            "Noisy Card",
+            0.50,
+            2.0,
+            _empirical_inclusion=0.9,
+            _empirical_reliable=False,
+        ),
+    ]
+    assert _names_under_test(builder._pareto_filter(cards + _fillers())) == {
+        "Cheap Jank",
+        "Noisy Card",
+    }
 
 
 def test_complementary_staples_both_survive(builder) -> None:
@@ -130,12 +136,20 @@ def test_complementary_staples_both_survive(builder) -> None:
     Both appear in most real decks, so both must survive.
     """
     rival = _make_card(
-        "rival", "Deadly Dispute", cvar_score=0.775, price=0.35,
-        _empirical_inclusion=0.55, _empirical_reliable=True,
+        "rival",
+        "Deadly Dispute",
+        cvar_score=0.775,
+        price=0.35,
+        _empirical_inclusion=0.55,
+        _empirical_reliable=True,
     )
     staple = _make_card(
-        "staple", "Pitiless Plunderer", cvar_score=0.475, price=3.15,
-        _empirical_inclusion=0.65, _empirical_reliable=True,
+        "staple",
+        "Pitiless Plunderer",
+        cvar_score=0.475,
+        price=3.15,
+        _empirical_inclusion=0.65,
+        _empirical_reliable=True,
     )
 
     kept = builder._pareto_filter([rival, staple] + _fillers())
@@ -143,25 +157,26 @@ def test_complementary_staples_both_survive(builder) -> None:
     assert _names_under_test(kept) == {"Deadly Dispute", "Pitiless Plunderer"}
 
 
-def test_protection_requires_clearing_the_inclusion_floor(builder) -> None:
-    """A card below the inclusion floor is still eliminated normally.
+def test_fringe_card_keeps_discovery_channel(builder) -> None:
+    cards = [
+        _make_card("a", "Cheap Jank", 0.60, 0.03),
+        _make_card(
+            "b",
+            "Fringe Card",
+            0.50,
+            2.0,
+            _empirical_inclusion=0.1,
+            _empirical_reliable=True,
+        ),
+    ]
+    assert _names_under_test(builder._pareto_filter(cards + _fillers())) == {
+        "Cheap Jank",
+        "Fringe Card",
+    }
 
-    Protection keys on the card's own rate, so a card the corpus barely plays
-    gets no exemption however common its dominator is.
-    """
-    jank = _make_card("jank", "Cheap Jank", cvar_score=0.60, price=0.03)
-    fringe = _make_card(
-        "fringe", "Fringe Card", cvar_score=0.50, price=2.00,
-        _empirical_inclusion=0.10, _empirical_reliable=True,
-    )
 
-    kept = builder._pareto_filter([jank, fringe] + _fillers())
-
-    assert _names_under_test(kept) == {"Cheap Jank"}
-
-
-def test_no_corpus_data_leaves_filter_behaviour_unchanged(builder) -> None:
-    """With no corpus at all, the filter degrades to the plain rule."""
+def test_no_corpus_data_keeps_small_pool_diverse(builder) -> None:
+    """No evidence is an explicit fallback, not a price-dominance certificate."""
     cards = [
         _make_card("a", "Best", cvar_score=0.90, price=0.10),
         _make_card("b", "Dominated", cvar_score=0.20, price=5.00),
@@ -170,4 +185,4 @@ def test_no_corpus_data_leaves_filter_behaviour_unchanged(builder) -> None:
 
     kept = builder._pareto_filter(cards + _fillers())
 
-    assert _names_under_test(kept) == {"Best", "Expensive But Strong"}
+    assert _names_under_test(kept) == {"Best", "Dominated", "Expensive But Strong"}

@@ -1,0 +1,12 @@
+{
+  "settings":{"evidence_weight":0.45,"land_evidence_weight":10.0,"land_risk_weight":1.0,"budget_recall":12},
+  "land_policy_version":"land-policy.v2-score-units",
+  "decision":"Conservative development-screen candidate, not a statistically established optimum",
+  "reasons":[
+    "Keep E=0.45: independent labels do not identify a superior empirical weight; avoid optimizing popularity against itself.",
+    "L=10,R=1 removes the observed severe land example in the frozen multicolor replay and improves the source menu without using the strongest tested penalties.",
+    "K=12 retains additional affordable choices with zero missing protected cards on the three exposed commanders.",
+    "Stage screening cannot establish whole-deck improvement; evaluate this frozen combination against baseline on held-out commanders next."
+  ],
+  "holdout_results_inspected_before_selection":false
+}

@@ -1,0 +1,53 @@
+{
+  "source": "Frozen public Oracle records; adaptive confirmation negatives. Arcades and Ur-Dragon are now development-exposed.",
+  "cards": [
+    {
+      "name": "Moderation",
+      "oracle_text": "You can't cast more than one spell each turn.\nWhenever you cast a spell, draw a card.",
+      "type_line": "Enchantment",
+      "cmc": 3.0,
+      "mana_cost": "{1}{W}{U}",
+      "color_identity": "[\"U\", \"W\"]"
+    },
+    {
+      "name": "Rule of Law",
+      "oracle_text": "Each player can't cast more than one spell each turn.",
+      "type_line": "Enchantment",
+      "cmc": 3.0,
+      "mana_cost": "{2}{W}",
+      "color_identity": "[\"W\"]"
+    },
+    {
+      "name": "Meditate",
+      "oracle_text": "Draw four cards. You skip your next turn.",
+      "type_line": "Instant",
+      "cmc": 3.0,
+      "mana_cost": "{2}{U}",
+      "color_identity": "[\"U\"]"
+    },
+    {
+      "name": "Perilous Research",
+      "oracle_text": "Draw two cards, then sacrifice a permanent.",
+      "type_line": "Instant",
+      "cmc": 2.0,
+      "mana_cost": "{1}{U}",
+      "color_identity": "[\"U\"]"
+    },
+    {
+      "name": "Teferi's Response",
+      "oracle_text": "Counter target spell or ability an opponent controls that targets a land you control. If a permanent's ability is countered this way, destroy that permanent.\nDraw two cards.",
+      "type_line": "Instant",
+      "cmc": 2.0,
+      "mana_cost": "{1}{U}",
+      "color_identity": "[\"U\"]"
+    },
+    {
+      "name": "Words of Wisdom",
+      "oracle_text": "You draw two cards, then each other player draws a card.",
+      "type_line": "Instant",
+      "cmc": 2.0,
+      "mana_cost": "{1}{U}",
+      "color_identity": "[\"U\"]"
+    }
+  ]
+}

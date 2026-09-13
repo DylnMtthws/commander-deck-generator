@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "source": "Public Oracle records from frozen Scryfall cards catalog; no user deck or production records",
+  "expected": "status != supported OR confidence == partial; not a blacklist and not a claim these cards are bad",
+  "cards": [
+    {
+      "name": "Brainstorm",
+      "oracle_text": "Draw three cards, then put two cards from your hand on top of your library in any order.",
+      "mana_cost": "{U}",
+      "cmc": 1.0,
+      "type_line": "Instant"
+    },
+    {
+      "name": "Humble Defector",
+      "oracle_text": "{T}: Draw two cards. Target opponent gains control of this creature. Activate only during your turn.",
+      "mana_cost": "{1}{R}",
+      "cmc": 2.0,
+      "type_line": "Creature \u2014 Human Rogue"
+    },
+    {
+      "name": "Edgewall Innkeeper",
+      "oracle_text": "Whenever you cast a creature spell that has an Adventure, draw a card. (It doesn't need to have gone on the adventure first.)",
+      "mana_cost": "{G}",
+      "cmc": 1.0,
+      "type_line": "Creature \u2014 Human Peasant"
+    },
+    {
+      "name": "Undead Augur",
+      "oracle_text": "Whenever this creature or another Zombie you control dies, you draw a card and you lose 1 life.",
+      "mana_cost": "{B}{B}",
+      "cmc": 2.0,
+      "type_line": "Creature \u2014 Zombie Wizard"
+    },
+    {
+      "name": "Mindstorm Crown",
+      "oracle_text": "At the beginning of your upkeep, draw a card if you had no cards in hand at the beginning of this turn. If you had a card in hand, this artifact deals 1 damage to you.",
+      "mana_cost": "{3}",
+      "cmc": 3.0,
+      "type_line": "Artifact"
+    },
+    {
+      "name": "Ancestral Vision",
+      "oracle_text": "Suspend 4\u2014{U} (Rather than cast this card from your hand, pay {U} and exile it with four time counters on it. At the beginning of your upkeep, remove a time counter. When the last is removed, you may cast it without paying its mana cost.)\nTarget player draws three cards.",
+      "mana_cost": "",
+      "cmc": 0.0,
+      "type_line": "Sorcery"
+    },
+    {
+      "name": "Glimpse of Nature",
+      "oracle_text": "Whenever you cast a creature spell this turn, draw a card.",
+      "mana_cost": "{G}",
+      "cmc": 1.0,
+      "type_line": "Sorcery"
+    },
+    {
+      "name": "Mask of Memory",
+      "oracle_text": "Whenever equipped creature deals combat damage to a player, you may draw two cards. If you do, discard a card.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)",
+      "mana_cost": "{2}",
+      "cmc": 2.0,
+      "type_line": "Artifact \u2014 Equipment"
+    },
+    {
+      "name": "Mind's Eye",
+      "oracle_text": "Whenever an opponent draws a card, you may pay {1}. If you do, draw a card.",
+      "mana_cost": "{5}",
+      "cmc": 5.0,
+      "type_line": "Artifact"
+    },
+    {
+      "name": "Bane Alley Broker",
+      "oracle_text": "{T}: Draw a card, then exile a card from your hand face down.\nYou may look at cards exiled with this creature.\n{U}{B}, {T}: Return a card exiled with this creature to its owner's hand.",
+      "mana_cost": "{1}{U}{B}",
+      "cmc": 3.0,
+      "type_line": "Creature \u2014 Human Rogue"
+    },
+    {
+      "name": "Loreseeker's Stone",
+      "oracle_text": "{3}, {T}: Draw three cards. This ability costs {1} more to activate for each card in your hand.",
+      "mana_cost": "{6}",
+      "cmc": 6.0,
+      "type_line": "Artifact"
+    },
+    {
+      "name": "Inspired Idea",
+      "oracle_text": "Cleave {3}{U}{U} (You may cast this spell for its cleave cost. If you do, remove the words in square brackets.)\nDraw three cards. [Your maximum hand size is reduced by three for the rest of the game.]",
+      "mana_cost": "{2}{U}",
+      "cmc": 3.0,
+      "type_line": "Sorcery"
+    },
+    {
+      "name": "Sinister Gnarlbark",
+      "oracle_text": "At the beginning of your end step, draw a card and blight 1. (Put a -1/-1 counter on a creature you control.)",
+      "mana_cost": "{2}{B}",
+      "cmc": 3.0,
+      "type_line": "Creature \u2014 Treefolk Warlock"
+    },
+    {
+      "name": "Urza's Blueprints",
+      "oracle_text": "Echo {6} (At the beginning of your upkeep, if this came under your control since the beginning of your last upkeep, sacrifice it unless you pay its echo cost.)\n{T}: Draw a card.",
+      "mana_cost": "{6}",
+      "cmc": 6.0,
+      "type_line": "Artifact"
+    },
+    {
+      "name": "Jacob Hauken, Inspector // Hauken's Insight",
+      "oracle_text": "{T}: Draw a card, then exile a card from your hand face down. You may look at that card for as long as it remains exiled. You may pay {4}{U}{U}. If you do, transform Jacob Hauken. // At the beginning of your upkeep, exile the top card of your library face down. You may look at that card for as long as it remains exiled.\nOnce during each of your turns, you may play a land or cast a spell from among the cards exiled with this permanent without paying its mana cost.",
+      "mana_cost": "{1}{U}",
+      "cmc": 2.0,
+      "type_line": "Legendary Creature \u2014 Human Advisor // Legendary Enchantment"
+    },
+    {
+      "name": "Sensei's Divining Top",
+      "oracle_text": "{1}: Look at the top three cards of your library, then put them back in any order.\n{T}: Draw a card, then put this artifact on top of its owner's library.",
+      "mana_cost": "{1}",
+      "cmc": 1.0,
+      "type_line": "Artifact"
+    },
+    {
+      "name": "Azor's Gateway // Sanctum of the Sun",
+      "oracle_text": "{1}, {T}: Draw a card, then exile a card from your hand. If cards with five or more different mana values are exiled with Azor's Gateway, you gain 5 life, untap Azor's Gateway, and transform it. // (Transforms from Azor's Gateway.)\n{T}: Add X mana of any one color, where X is your life total.",
+      "mana_cost": "{2}",
+      "cmc": 2.0,
+      "type_line": "Legendary Artifact // Legendary Land"
+    },
+    {
+      "name": "See Beyond",
+      "oracle_text": "Draw two cards, then shuffle a card from your hand into your library.",
+      "mana_cost": "{1}{U}",
+      "cmc": 2.0,
+      "type_line": "Sorcery"
+    },
+    {
+      "name": "Insatiable Avarice",
+      "oracle_text": "Spree (Choose one or more additional costs.)\n+ {2} \u2014 Search your library for a card, then shuffle and put that card on top.\n+ {B}{B} \u2014 Target player draws three cards and loses 3 life.",
+      "mana_cost": "{B}",
+      "cmc": 1.0,
+      "type_line": "Sorcery"
+    },
+    {
+      "name": "Promise of Power",
+      "oracle_text": "Choose one \u2014\n\u2022 You draw five cards and you lose 5 life.\n\u2022 Create an X/X black Demon creature token with flying, where X is the number of cards in your hand.\nEntwine {4} (Choose both if you pay the entwine cost.)",
+      "mana_cost": "{2}{B}{B}{B}",
+      "cmc": 5.0,
+      "type_line": "Sorcery"
+    }
+  ]
+}

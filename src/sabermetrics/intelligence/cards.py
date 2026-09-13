@@ -16,17 +16,58 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-VERSION = "card-facts.v2"
+VERSION = "card-facts.v3"
 COLORS = "WUBRG"
 BASICS = dict(zip(("Plains", "Island", "Swamp", "Mountain", "Forest"), COLORS))
+
+# Deck construction reads the first role as the card's slot. Alphabetical order
+# made "board_wipe" outrank "land" and "draw" outrank "ramp"; order by what the
+# slot actually has to be, lands first because a land can never fill a spell
+# slot. Roles outside this list keep a stable alphabetical tail.
+ROLE_PRIORITY = (
+    "land",
+    "ramp",
+    "removal",
+    "board_wipe",
+    "draw",
+    "wincon",
+    "recursion",
+    "tutor",
+    "protection",
+    "utility",
+)
+
+
+def order_roles(roles) -> list[str]:
+    """Sort roles so the first entry is the most slot-defining one."""
+    return sorted(
+        set(roles),
+        key=lambda r: (
+            ROLE_PRIORITY.index(r) if r in ROLE_PRIORITY else len(ROLE_PRIORITY),
+            r,
+        ),
+    )
+
+
+def primary_role(roles) -> str:
+    ordered = order_roles(roles)
+    return ordered[0] if ordered else "utility"
 
 
 class CardFacts(BaseModel):
     version: str = VERSION
     oracle_hash: str
     roles: list[str] = Field(default_factory=list)
+    primary_role: str = "utility"
     capabilities: list[str] = Field(default_factory=list)
     conditions: list[str] = Field(default_factory=list)
+    # Conditions attached to the capability they gate, so a caller can tell
+    # "mana, but only with three artifacts" from "mana, but only once".
+    capability_conditions: dict[str, list[str]] = Field(default_factory=dict)
+    # Aspects this parser could not decide. Absence of a capability means
+    # "not verified", and these entries say so explicitly; they are never
+    # evidence that the card lacks the effect.
+    unknown: list[str] = Field(default_factory=list)
     exclusion: str | None = None
     land_colors: list[str] = Field(default_factory=list)
     provenance: str = "deterministic-supported-shapes"
@@ -34,6 +75,193 @@ class CardFacts(BaseModel):
 
 def _text(card: dict) -> str:
     return str(card.get("oracle_text") or "")
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:40]
+
+
+# --- supported conditional shapes -----------------------------------------
+# Each pattern below describes one printed shape. Anything broader is left
+# undetected on purpose: a missing capability is an unknown, not a denial.
+
+# Ability words ("Landfall — Whenever ...") precede the trigger itself.
+_TRIGGER_RE = re.compile(
+    r"^(?:[a-z' \-]{0,30}—\s*)?(?:whenever|when |at the beginning)"
+)
+_ADD_MANA_RE = re.compile(
+    r"\badd (?:\{|one mana|two mana|three mana|x mana|an amount of|that much)"
+)
+_ONCE_PER_TURN_RE = re.compile(
+    r"once (?:during )?each (?:of your )?turns?|only once each turn"
+)
+_METALCRAFT_RE = re.compile(r"metalcraft|three or more artifacts")
+_POWER_MANA_RE = re.compile(r"(?:equal to|where x is) [^.\n]*\bpower\b")
+_COMBAT_DAMAGE_RE = re.compile(
+    r"deals combat damage to (?:a player|an opponent|one or more players)"
+)
+_ANY_DAMAGE_RE = re.compile(
+    r"deals (?:noncombat )?damage to (?:a player|an opponent|one or more players)"
+)
+_NONCREATURE_DAMAGE_RE = re.compile(
+    r"whenever you cast (?:a noncreature spell|an instant or sorcery spell)"
+    r"[^.\n]*deals (?:\d+|x) damage to "
+    r"(?:each opponent|target opponent|target player|any target)"
+)
+_TUTOR_RE = re.compile(
+    r"search your library for (?:up to \w+ )?(?:a |an )?([^.,\n]{0,60}?) cards?\b"
+)
+_TREASURE_RE = re.compile(r"creates? [^.\n]*treasure token")
+_LAND_TARGET_RE = re.compile(r"\b(?:land|basic|plains|island|swamp|mountain|forest)\b")
+
+
+def _mana_shapes(front: str, front_type: str, caps: set, cap_conditions: dict) -> None:
+    """Classify printed mana production; burst is kept apart from ramp."""
+    spell = "instant" in front_type or "sorcery" in front_type
+    creature = "creature" in front_type
+    for raw_line in front.splitlines():
+        line = raw_line.strip()
+        if not _ADD_MANA_RE.search(line):
+            continue
+        head, sep, body = line.partition(":")
+        if not sep or _ADD_MANA_RE.search(head):
+            head, body = "", line
+        conditions: list[str] = []
+        if _TRIGGER_RE.match(line):
+            # A triggered ability is not a mana ability a player can rely on.
+            caps.add("triggered_mana")
+            cap_conditions.setdefault("triggered_mana", []).append(
+                "mana_requires_trigger_to_resolve"
+            )
+            continue
+        if "exile this card from your hand" in head:
+            capability = "burst_mana"
+            conditions.append("exiled_from_hand_instead_of_being_cast")
+        elif head and "sacrifice" in head:
+            capability = "burst_mana"
+            conditions.append("requires_sacrificing_the_source")
+        elif head and "{t}" in head:
+            capability = "mana_source"
+        elif head.strip() == "{0}" and _POWER_MANA_RE.search(line):
+            capability = "mana_source"
+            conditions.append("power_dependent_free_activation")
+        elif not head and spell:
+            capability = "burst_mana"
+            conditions.append("one_shot_spell_mana")
+        elif not head and _ONCE_PER_TURN_RE.search(line):
+            # A per-turn permission to add mana, not an activated ability.
+            capability = "mana_source"
+            conditions.append("once_per_turn_only")
+        else:
+            continue
+        if "discard your hand" in line:
+            conditions.append("requires_discarding_your_hand")
+        if "spend this mana only" in line:
+            conditions.append("mana_usage_is_restricted")
+        if "for each" in body or " x " in f" {body} ":
+            conditions.append("mana_amount_varies")
+        if _METALCRAFT_RE.search(line) and "activate only" in line:
+            conditions.append("requires_metalcraft_three_artifacts")
+        elif "activate only" in line:
+            conditions.append("conditional_activation_restriction")
+        if _ONCE_PER_TURN_RE.search(line) and "once_per_turn_only" not in conditions:
+            conditions.append("once_per_turn_only")
+        if capability == "mana_source" and creature:
+            conditions.append("creature_mana_requires_no_summoning_sickness")
+        if capability == "burst_mana":
+            conditions.append("burst_mana_is_not_repeatable_ramp")
+        caps.add(capability)
+        cap_conditions.setdefault(capability, []).extend(conditions)
+        if _POWER_MANA_RE.search(line):
+            power_conditions = conditions + ["mana_amount_depends_on_creature_power"]
+            caps.add("power_based_mana")
+            cap_conditions.setdefault("power_based_mana", []).extend(power_conditions)
+            if "once_per_turn_only" in conditions:
+                caps.add("power_based_mana_once_per_turn")
+                cap_conditions.setdefault("power_based_mana_once_per_turn", []).extend(
+                    power_conditions
+                )
+    if _TREASURE_RE.search(front):
+        caps.add("burst_mana")
+        cap_conditions.setdefault("burst_mana", []).extend(
+            ["requires_sacrificing_a_treasure", "burst_mana_is_not_repeatable_ramp"]
+        )
+
+
+def _payoff_shapes(front: str, caps: set, cap_conditions: dict, roles: set) -> None:
+    """Damage-gated draw, cast-gated damage, and variable draw counts."""
+    for raw_line in front.splitlines():
+        line = raw_line.strip()
+        if _TRIGGER_RE.match(line) and "draw" in line:
+            if _COMBAT_DAMAGE_RE.search(line):
+                caps.add("draw_on_combat_damage")
+                cap_conditions.setdefault("draw_on_combat_damage", []).append(
+                    "requires_connecting_in_combat"
+                )
+                roles.add("draw")
+            elif _ANY_DAMAGE_RE.search(line):
+                caps.add("draw_on_opponent_damage")
+                cap_conditions.setdefault("draw_on_opponent_damage", []).append(
+                    "requires_a_damage_source"
+                )
+                roles.add("draw")
+        if "draw that many cards" in line:
+            caps.add("draw_that_many")
+            cap_conditions.setdefault("draw_that_many", []).append(
+                "draw_amount_depends_on_variable_state"
+            )
+            roles.add("draw")
+        if re.search(r"draw cards equal to|draw a card for each", line):
+            caps.add("draw_variable")
+            cap_conditions.setdefault("draw_variable", []).append(
+                "draw_amount_depends_on_variable_state"
+            )
+            roles.add("draw")
+    if re.search(
+        r"as long as .*paired.*each.*whenever this creature deals damage to an opponent, draw a card",
+        front,
+        re.DOTALL,
+    ):
+        caps.add("draw_on_opponent_damage")
+        cap_conditions.setdefault("draw_on_opponent_damage", []).append(
+            "requires_soulbond_pair_and_damage_source"
+        )
+        roles.add("draw")
+    if _NONCREATURE_DAMAGE_RE.search(front):
+        caps.add("noncreature_cast_damage")
+        cap_conditions.setdefault("noncreature_cast_damage", []).append(
+            "requires_noncreature_spell_density"
+        )
+
+
+def _tutor_shape(front: str, caps: set, cap_conditions: dict, roles: set) -> None:
+    """Library search that is not already modelled as land ramp or access."""
+    match = _TUTOR_RE.search(front)
+    if not match:
+        return
+    target = match.group(1).strip()
+    if _LAND_TARGET_RE.search(target):
+        return  # Land search stays with the land_ramp / land_access shapes.
+    caps.add("tutor")
+    roles.add("tutor")
+    conditions = [
+        (
+            "tutor_unrestricted"
+            if target in ("", "a", "an")
+            else f"tutor_limited_to_{_slug(target)}"
+        )
+    ]
+    tail = front[match.end() : match.end() + 200]
+    if "into your hand" in tail:
+        caps.add("tutor_to_hand")
+    elif "onto the battlefield" in tail:
+        caps.add("tutor_to_battlefield")
+    elif "on top of your library" in tail:
+        caps.add("tutor_to_top")
+        conditions.append("tutored_card_still_has_to_be_drawn")
+    else:
+        conditions.append("tutor_destination_not_determined")
+    cap_conditions.setdefault("tutor", []).extend(conditions)
 
 
 @lru_cache(maxsize=40000)
@@ -44,6 +272,8 @@ def _analyze(name: str, text: str, types: str) -> str:
     roles: set[str] = set()
     caps: set[str] = set()
     conditions: list[str] = []
+    cap_conditions: dict[str, list[str]] = {}
+    unknown: list[str] = []
     exclusion = None
     land = "land" in front_type
     # Parse specific useful clauses; never let a land back face imply ramp.
@@ -79,6 +309,13 @@ def _analyze(name: str, text: str, types: str) -> str:
     if not land and re.search(r"(?:^|\n)\{t\}: add (?:\{[cwubrg]\}|one mana)", front):
         roles.add("ramp")
         caps.add("mana_source")
+    if not land:
+        _mana_shapes(front, front_type, caps, cap_conditions)
+        # Repeatable production is ramp; a single burst is not, and says so.
+        if "mana_source" in caps:
+            roles.add("ramp")
+    _payoff_shapes(front, caps, cap_conditions, roles)
+    _tutor_shape(front, caps, cap_conditions, roles)
     if re.search(r"draw (?:a|one|two|three|four|[0-9]+|x) cards?", front):
         roles.add("draw")
     if re.search(
@@ -135,6 +372,9 @@ def _analyze(name: str, text: str, types: str) -> str:
         conditions.append("same_name_target_not_guaranteed_in_singleton")
         roles.discard("ramp")
         roles.discard("tutor")
+        caps -= {"tutor", "tutor_to_hand", "tutor_to_battlefield", "tutor_to_top"}
+        cap_conditions.pop("tutor", None)
+        unknown.append("same_name_search_target_availability_unknown")
         # An instant/sorcery whose only payoff is same-name search cannot be
         # treated as a functional tutor without an explicitly modeled target.
         if "instant" in front_type or "sorcery" in front_type:
@@ -164,13 +404,31 @@ def _analyze(name: str, text: str, types: str) -> str:
             conditions.append("no_verified_unconditional_colored_mana")
     if "//" in types:
         conditions.append("multiple_faces_require_face_aware_model")
+        unknown.append("back_face_effects_not_modeled")
     if not text and name not in BASICS:
         conditions.append("oracle_text_unavailable")
+        unknown.append("oracle_text_unavailable")
+    if "convoke" in front:
+        unknown.append("convoke_mana_reduction_amount_unknown")
+    if re.search(r'"[^"]*\bwhenever\b', front):
+        # An ability granted to another object in quotes is a different card's
+        # behaviour; this parser does not resolve who ends up with it.
+        unknown.append("granted_abilities_in_quoted_text_not_modeled")
+    if text and not caps and not roles:
+        # No supported shape matched. That is an unresolved reading of the
+        # card, not a statement that the card does nothing.
+        unknown.append("no_supported_shape_detected")
+    conditions.extend(c for values in cap_conditions.values() for c in values)
     result = CardFacts(
         oracle_hash=hashlib.sha256((text + "\0" + types).encode()).hexdigest(),
-        roles=sorted(roles),
+        roles=order_roles(roles),
+        primary_role=primary_role(roles),
         capabilities=sorted(caps),
         conditions=sorted(set(conditions)),
+        capability_conditions={
+            k: sorted(set(v)) for k, v in sorted(cap_conditions.items())
+        },
+        unknown=sorted(set(unknown)),
         exclusion=exclusion,
         land_colors=sorted(colors),
     )
@@ -238,9 +496,19 @@ def annotate(card: dict) -> dict:
     result["_discovery_roles"] = old
     # Preserve specialized discovery roles, but do not use unsupported ramp,
     # draw/removal/board-wipe claims as optimizer requirements.
-    roles = set(old) - {"ramp", "draw", "removal", "board_wipe", "recursion"}
+    unverified = {"ramp", "draw", "removal", "board_wipe", "recursion"}
+    roles = set(old) - unverified
     roles.update(facts.roles)
-    result["role_tags"] = json.dumps(sorted(roles) or ["utility"])
+    ordered = order_roles(roles) or ["utility"]
+    result["role_tags"] = json.dumps(ordered)
+    # Verified and discovery-only claims stay distinguishable: a discovery tag
+    # this parser could not confirm is unknown, never a confirmed absence.
+    result["_verified_roles"] = list(facts.roles)
+    result["_discovery_only_roles"] = sorted(set(old) - set(facts.roles))
+    result["_unverified_discovery_roles"] = sorted(
+        (set(old) & unverified) - set(facts.roles)
+    )
+    result["_primary_role"] = ordered[0]
     result["_facts"] = facts.model_dump()
     return result
 
@@ -248,7 +516,18 @@ def annotate(card: dict) -> dict:
 def usable_land(card: dict, colors: list[str]) -> bool:
     """Mana-base admission: only verified color production satisfies fixing."""
     facts = facts_for(card)
-    return not facts.exclusion and bool(set(facts.land_colors) & set(colors))
+    if facts.exclusion:
+        return False
+    if set(facts.land_colors) & set(colors):
+        return True
+    # Fetches are eligible sources with target prerequisites, not direct mana.
+    # The mana-base selector separately discounts and tracks their targets.
+    from sabermetrics.pipeline.mana_base import parse_land_colors
+
+    info = parse_land_colors(
+        str(card.get("oracle_text", "")), str(card.get("type_line", "")), colors
+    )
+    return info.is_fetch and bool(set(info.fetch_targets) & set(colors))
 
 
 def semantic_findings(cards: list[dict]) -> list[dict]:

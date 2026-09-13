@@ -546,6 +546,17 @@ def _score_land(
         if pattern.search(oracle_lower):
             score -= penalty
 
+    from sabermetrics.intelligence.experiment import current
+
+    experiment = current()
+    if experiment.land_evidence_weight or experiment.land_risk_weight:
+        from sabermetrics.intelligence.land_policy import adjust_land_score
+
+        score = adjust_land_score(
+            land_info.card, score,
+            evidence_weight=experiment.land_evidence_weight,
+            risk_weight=experiment.land_risk_weight,
+        )
     return score
 
 

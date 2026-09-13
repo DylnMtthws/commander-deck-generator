@@ -183,7 +183,7 @@
                                     <td class="text-body">{{ card.name }}</td>
                                     <td class="text-muted">{{ card.type_line or '' }}</td>
                                     <td class="text-muted">{{ card.cmc or '' }}</td>
-                                    <td>{{ card.fit_score or '' }}/10</td>
+                                    <td>{% if card.fit_review_status == 'reviewed' %}{{ card.fit_score }}/10{% elif card.fit_review_status == 'unresolved' %}Unresolved{% else %}Unreviewed{% endif %}</td>
                                     <td>{{ "%.1f"|format(card.cvar_score or 0) }}</td>
                                     <td class="reasoning">{{ card.reasoning or '' }}</td>
                                 </tr>

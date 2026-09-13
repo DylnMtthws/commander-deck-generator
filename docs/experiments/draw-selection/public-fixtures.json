@@ -1,0 +1,131 @@
+{
+  "source": "Frozen public card catalog, Oracle fields only; prices in tests are explicit scenarios, not market quotes.",
+  "cards": {
+    "Rhystic Study": {
+      "name": "Rhystic Study",
+      "oracle_text": "Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.",
+      "type_line": "Enchantment",
+      "cmc": 3.0,
+      "mana_cost": "{2}{U}",
+      "color_identity": "[\"U\"]",
+      "is_legal_in_99": 1
+    },
+    "Phyrexian Arena": {
+      "name": "Phyrexian Arena",
+      "oracle_text": "At the beginning of your upkeep, you draw a card and you lose 1 life.",
+      "type_line": "Enchantment",
+      "cmc": 3.0,
+      "mana_cost": "{1}{B}{B}",
+      "color_identity": "[\"B\"]",
+      "is_legal_in_99": 1
+    },
+    "The Unagi of Kyoshi Island": {
+      "name": "The Unagi of Kyoshi Island",
+      "oracle_text": "Flash\nWard\u2014Waterbend {4}. (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {4}. They can tap their artifacts and creatures to help. Each one pays for {1}.)\nWhenever an opponent draws their second card each turn, you draw two cards.",
+      "type_line": "Legendary Creature \u2014 Serpent",
+      "cmc": 5.0,
+      "mana_cost": "{3}{U}{U}",
+      "color_identity": "[\"U\"]",
+      "is_legal_in_99": 1
+    },
+    "Notion Thief": {
+      "name": "Notion Thief",
+      "oracle_text": "Flash\nIf an opponent would draw a card except the first one they draw in each of their draw steps, instead that player skips that draw and you draw a card.",
+      "type_line": "Creature \u2014 Human Rogue",
+      "cmc": 4.0,
+      "mana_cost": "{2}{U}{B}",
+      "color_identity": "[\"B\", \"U\"]",
+      "is_legal_in_99": 1
+    },
+    "Insight Engine": {
+      "name": "Insight Engine",
+      "oracle_text": "{2}, {T}: Put a charge counter on this artifact, then draw a card for each charge counter on it.",
+      "type_line": "Artifact",
+      "cmc": 3.0,
+      "mana_cost": "{2}{U}",
+      "color_identity": "[\"U\"]",
+      "is_legal_in_99": 1
+    },
+    "Beast Whisperer": {
+      "name": "Beast Whisperer",
+      "oracle_text": "Whenever you cast a creature spell, draw a card.",
+      "type_line": "Creature \u2014 Elf Druid",
+      "cmc": 4.0,
+      "mana_cost": "{2}{G}{G}",
+      "color_identity": "[\"G\"]",
+      "is_legal_in_99": 1
+    },
+    "Guardian Project": {
+      "name": "Guardian Project",
+      "oracle_text": "Whenever a nontoken creature you control enters, if it doesn't have the same name as another creature you control or a creature card in your graveyard, draw a card.",
+      "type_line": "Enchantment",
+      "cmc": 4.0,
+      "mana_cost": "{3}{G}",
+      "color_identity": "[\"G\"]",
+      "is_legal_in_99": 1
+    },
+    "Skullclamp": {
+      "name": "Skullclamp",
+      "oracle_text": "Equipped creature gets +1/-1.\nWhenever equipped creature dies, draw two cards.\nEquip {1}",
+      "type_line": "Artifact \u2014 Equipment",
+      "cmc": 1.0,
+      "mana_cost": "{1}",
+      "color_identity": "[]",
+      "is_legal_in_99": 1
+    },
+    "Faithless Looting": {
+      "name": "Faithless Looting",
+      "oracle_text": "Draw two cards, then discard two cards.\nFlashback {2}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)",
+      "type_line": "Sorcery",
+      "cmc": 1.0,
+      "mana_cost": "{R}",
+      "color_identity": "[\"R\"]",
+      "is_legal_in_99": 1
+    },
+    "Harmonize": {
+      "name": "Harmonize",
+      "oracle_text": "Draw three cards.",
+      "type_line": "Sorcery",
+      "cmc": 4.0,
+      "mana_cost": "{2}{G}{G}",
+      "color_identity": "[\"G\"]",
+      "is_legal_in_99": 1
+    },
+    "Sign in Blood": {
+      "name": "Sign in Blood",
+      "oracle_text": "Target player draws two cards and loses 2 life.",
+      "type_line": "Sorcery",
+      "cmc": 2.0,
+      "mana_cost": "{B}{B}",
+      "color_identity": "[\"B\"]",
+      "is_legal_in_99": 1
+    },
+    "Bident of Thassa": {
+      "name": "Bident of Thassa",
+      "oracle_text": "Whenever a creature you control deals combat damage to a player, you may draw a card.\n{1}{U}, {T}: Creatures your opponents control attack this turn if able.",
+      "type_line": "Legendary Enchantment Artifact",
+      "cmc": 4.0,
+      "mana_cost": "{2}{U}{U}",
+      "color_identity": "[\"U\"]",
+      "is_legal_in_99": 1
+    },
+    "Morbid Opportunist": {
+      "name": "Morbid Opportunist",
+      "oracle_text": "Whenever one or more other creatures die, draw a card. This ability triggers only once each turn.",
+      "type_line": "Creature \u2014 Human Rogue",
+      "cmc": 3.0,
+      "mana_cost": "{2}{B}",
+      "color_identity": "[\"B\"]",
+      "is_legal_in_99": 1
+    },
+    "Village Rites": {
+      "name": "Village Rites",
+      "oracle_text": "As an additional cost to cast this spell, sacrifice a creature.\nDraw two cards.",
+      "type_line": "Instant",
+      "cmc": 1.0,
+      "mana_cost": "{B}",
+      "color_identity": "[\"B\"]",
+      "is_legal_in_99": 1
+    }
+  }
+}

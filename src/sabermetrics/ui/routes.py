@@ -218,7 +218,11 @@ def _execute_generation(captured: dict, progress_callback) -> str:
         owner_id=captured["owner_id"],
         deck_id=deck_id,
     )
-    result = builder.build(request)
+    from sabermetrics.intelligence.experiment import Experiment, using
+
+    # Deploy only the validated baseline-first policy; never the unguarded arm.
+    with using(Experiment(draw_selection=True, preserve_functions=True)):
+        result = builder.build(request)
     db.DecksRepo(db_path).set_owner(result.deck.id, captured["owner_id"])
     return result.deck.id
 
