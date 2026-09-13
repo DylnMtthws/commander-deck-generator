@@ -585,7 +585,7 @@ class DeckBuilder:
                 (
                     old[c["name"]].model_copy(update={"card": c})
                     if c["name"] in old
-                    else SlotAssignment(card=c, slot_role="draw", score=0.0)
+                    else SlotAssignment(card=c, slot_role=_heuristic_role(c), score=0.0)
                 )
                 for c in fixed
             ]
@@ -2621,6 +2621,18 @@ class DeckBuilder:
                     name = front
             if not name or name == commander.name:
                 continue
+            from sabermetrics.intelligence.eligibility import main_deck_eligible
+
+            if not main_deck_eligible(a.card):
+                if getattr(self, "_tracer", None) is not None:
+                    self._tracer.record(
+                        card_name=name,
+                        stage="legality",
+                        action="rejected",
+                        reason="not a main-deck card type",
+                        force=True,
+                    )
+                continue
             if not _is_basic(name):
                 if name in seen:
                     continue  # singleton violation — drop the weaker copy
@@ -2830,6 +2842,16 @@ class DeckBuilder:
                 name=card_data.get("name", ""),
                 mana_cost=card_data.get("mana_cost"),
                 cmc=float(card_data.get("cmc", 0)),
+                power=(
+                    str(card_data["power"])
+                    if card_data.get("power") is not None
+                    else None
+                ),
+                toughness=(
+                    str(card_data["toughness"])
+                    if card_data.get("toughness") is not None
+                    else None
+                ),
                 type_line=card_data.get("type_line", ""),
                 oracle_text=card_data.get("oracle_text"),
                 color_identity=ci,
@@ -3130,8 +3152,14 @@ def _is_ramp(type_line: str, oracle_text: str) -> bool:
 
 def _heuristic_role(card: dict) -> str:
     """Classify card role by heuristics when LLM is unavailable."""
+    from sabermetrics.intelligence.commander_substitutions import extended_profile
     from sabermetrics.pipeline.slot_assigner import _classify_card_role
 
+    # Complete creature-targetable damage evidence must survive an incomplete
+    # cached facts record, including after a guarded replacement is persisted.
+    profile = extended_profile(card)
+    if profile and profile["family"] == "damage":
+        return "removal"
     if "_facts" in card:
         roles = card["_facts"]["roles"]
         for role in ("land", "ramp", "draw", "removal", "protection", "wincon"):

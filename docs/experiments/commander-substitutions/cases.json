@@ -1,0 +1,95 @@
+{
+  "cases": [
+    {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "rank": 5,
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed",
+      "arms": "baseline,candidate"
+    },
+    {
+      "case_id": "krenko-55-p3",
+      "name": "Krenko, Mob Boss",
+      "rank": 5,
+      "budget": 55,
+      "power": 3,
+      "split": "development-exposed",
+      "arms": "baseline,candidate"
+    },
+    {
+      "case_id": "krenko-50-p1",
+      "name": "Krenko, Mob Boss",
+      "rank": 5,
+      "budget": 50,
+      "power": 1,
+      "split": "development-exposed",
+      "arms": "candidate"
+    },
+    {
+      "case_id": "lathril",
+      "name": "Lathril, Blade of the Elves",
+      "rank": 13,
+      "budget": 100,
+      "power": 3,
+      "split": "development-exposed",
+      "arms": "candidate"
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "rank": 6,
+      "budget": 200,
+      "power": 3,
+      "split": "development-exposed",
+      "arms": "candidate"
+    },
+    {
+      "case_id": "giada",
+      "name": "Giada, Font of Hope",
+      "rank": 14,
+      "budget": 150,
+      "power": 3,
+      "split": "development-exposed",
+      "arms": "candidate"
+    },
+    {
+      "case_id": "arcades",
+      "name": "Arcades, the Strategist",
+      "rank": 41,
+      "budget": 200,
+      "power": 3,
+      "split": "development-exposed",
+      "arms": "candidate"
+    },
+    {
+      "case_id": "yuriko",
+      "name": "Yuriko, the Tiger's Shadow",
+      "rank": 19,
+      "budget": 1000,
+      "power": 4,
+      "split": "development-exposed",
+      "arms": "candidate"
+    },
+    {
+      "case_id": "azula",
+      "name": "Fire Lord Azula",
+      "rank": 10,
+      "budget": 2500,
+      "power": 5,
+      "split": "development-exposed",
+      "arms": "candidate"
+    },
+    {
+      "case_id": "urdragon",
+      "name": "The Ur-Dragon",
+      "rank": 2,
+      "budget": 1500,
+      "power": 4,
+      "split": "development-exposed",
+      "arms": "candidate"
+    }
+  ],
+  "note": "Development-exposed cohort selected from the previously recorded EDHrec top-50 list; ranks are historical, not refreshed for this run."
+}

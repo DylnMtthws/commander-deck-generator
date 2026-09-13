@@ -1,0 +1,294 @@
+{
+  "source_sha256": "e7bfa269a248b90f38dc79b2f6edcac9888d20a16ff6c2a10734ab3a7c147b7e",
+  "cohort": "development exposed; budget cases selected by disclosed offline screening; no card forcing",
+  "completed": 12,
+  "improved_cases": [
+    "krenko-51-p3",
+    "krenko-55-p3"
+  ],
+  "rows": [
+    {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "arm": "baseline",
+      "status": "completed",
+      "price": 50.84,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "unresolved": 15,
+        "reviewed": 3
+      },
+      "draw_package_status": "baseline",
+      "draw_credible": 0,
+      "guard_mode": "baseline",
+      "applied_swaps": 0,
+      "damage_card_roles": {
+        "Shock": "utility"
+      },
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 50.95,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 82,
+        "unresolved": 14,
+        "reviewed": 3
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 0,
+      "guard_mode": "function_guard",
+      "applied_swaps": 1,
+      "damage_card_roles": {
+        "Burst Lightning": "removal"
+      },
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "krenko-55-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 55,
+      "power": 3,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 54.95,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 82,
+        "unresolved": 14,
+        "reviewed": 3
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 0,
+      "guard_mode": "function_guard",
+      "applied_swaps": 1,
+      "damage_card_roles": {
+        "Burst Lightning": "removal"
+      },
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "krenko-55-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 55,
+      "power": 3,
+      "arm": "baseline",
+      "status": "completed",
+      "price": 54.84,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "unresolved": 14,
+        "reviewed": 4
+      },
+      "draw_package_status": "baseline",
+      "draw_credible": 0,
+      "guard_mode": "baseline",
+      "applied_swaps": 0,
+      "damage_card_roles": {
+        "Shock": "utility"
+      },
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "krenko-50-p1",
+      "name": "Krenko, Mob Boss",
+      "budget": 50,
+      "power": 1,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 50.0,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "unresolved": 16,
+        "reviewed": 2
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 0,
+      "guard_mode": "function_guard",
+      "applied_swaps": 0,
+      "damage_card_roles": {
+        "Shock": "utility"
+      },
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 194.69,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "reviewed": 18
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 0,
+      "guard_mode": "function_guard",
+      "applied_swaps": 0,
+      "damage_card_roles": {},
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "lathril",
+      "name": "Lathril, Blade of the Elves",
+      "budget": 100,
+      "power": 3,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 95.87,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "reviewed": 11,
+        "unresolved": 7
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 2,
+      "guard_mode": "function_guard",
+      "applied_swaps": 0,
+      "damage_card_roles": {},
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "giada",
+      "name": "Giada, Font of Hope",
+      "budget": 150,
+      "power": 3,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 149.23,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "unresolved": 3,
+        "reviewed": 15
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 0,
+      "guard_mode": "function_guard",
+      "applied_swaps": 0,
+      "damage_card_roles": {},
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "arcades",
+      "name": "Arcades, the Strategist",
+      "budget": 200,
+      "power": 3,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 177.92,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "reviewed": 17,
+        "unresolved": 1
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 0,
+      "guard_mode": "audit_only",
+      "applied_swaps": 0,
+      "damage_card_roles": {},
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "yuriko",
+      "name": "Yuriko, the Tiger's Shadow",
+      "budget": 1000,
+      "power": 4,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 700.55,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "reviewed": 17,
+        "unresolved": 1
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 0,
+      "guard_mode": "audit_only",
+      "applied_swaps": 0,
+      "damage_card_roles": {},
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "azula",
+      "name": "Fire Lord Azula",
+      "budget": 2500,
+      "power": 5,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 2156.07,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "reviewed": 18
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 1,
+      "guard_mode": "audit_only",
+      "applied_swaps": 0,
+      "damage_card_roles": {},
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    },
+    {
+      "case_id": "urdragon",
+      "name": "The Ur-Dragon",
+      "budget": 1500,
+      "power": 4,
+      "arm": "candidate",
+      "status": "completed",
+      "price": 910.44,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "review_status": {
+        "unreviewed": 81,
+        "reviewed": 18
+      },
+      "draw_package_status": "unresolved",
+      "draw_credible": 0,
+      "guard_mode": "audit_only",
+      "applied_swaps": 0,
+      "damage_card_roles": {},
+      "stickers_present": [],
+      "persisted_body_stats_count": 0
+    }
+  ]
+}

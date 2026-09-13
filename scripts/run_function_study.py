@@ -64,7 +64,7 @@ def main():
             (case["name"],),
         ).fetchone()[0]
         con.close()
-        arms = [(arm, arm == "candidate") for arm in args.arms.split(",")]
+        arms = [(arm, arm == "candidate") for arm in case.get("arms", args.arms).split(",")]
         if any(arm not in {"baseline", "candidate"} for arm, _ in arms):
             p.error("--arms must contain baseline and/or candidate")
         if (index + args.repeat) % 2:
@@ -153,6 +153,26 @@ def main():
                         row["applied_swaps"] = (
                             len(check["proofs"]) if check["improved"] else 0
                         )
+                        row["final_card_roles"] = {
+                            x["card"]["name"]: x["slot_role"]
+                            for x in data["deck"]["cards"]
+                        }
+                        row["swap_slot_roles"] = [
+                            {
+                                "incoming": proof["incoming"],
+                                "role": row["final_card_roles"].get(proof["incoming"]),
+                            }
+                            for proof in check["proofs"]
+                        ]
+                        for proof in check["proofs"]:
+                            if (
+                                proof.get("family") == "damage"
+                                and row["final_card_roles"].get(proof["incoming"])
+                                != "removal"
+                            ):
+                                row["validation_errors"].append(
+                                    "damage_replacement_role_mismatch"
+                                )
                         if not check["allowed"]:
                             row["validation_errors"].append("unsafe_final_transition")
                         if receipt.get("mode") == "audit_only" and check["changed"]:

@@ -159,6 +159,16 @@ def evaluate_final_deck(
                     message=f"'{name}' has no valid nonnegative price.",
                 )
             )
+        from sabermetrics.intelligence.eligibility import main_deck_eligible
+
+        if not main_deck_eligible(card):
+            report.failures.append(
+                QualityItem(
+                    severity="failure",
+                    code="card_type_eligibility",
+                    message=f"'{name}' is not a main-deck card type.",
+                )
+            )
         if card.get("is_legal_in_99") in (False, 0):
             report.failures.append(
                 QualityItem(

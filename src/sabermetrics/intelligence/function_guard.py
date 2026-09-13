@@ -16,7 +16,7 @@ from copy import deepcopy
 
 from sabermetrics.intelligence.draw_selection import audit, identity, price
 
-VERSION = "function-preservation.v1"
+VERSION = "function-preservation.v2"
 _NUMBERS = {
     "a": 1,
     "one": 1,
@@ -76,6 +76,10 @@ def stable_id(card):
     )
     mv = card.get("cmc", card.get("mana_value"))
     payload["mana_value"] = float(mv) if isinstance(mv, (int, float)) else None
+    payload["power"] = str(card["power"]) if card.get("power") is not None else None
+    payload["toughness"] = (
+        str(card["toughness"]) if card.get("toughness") is not None else None
+    )
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
@@ -84,6 +88,19 @@ def function_record(card):
 
     facts = function_profile(card)
     complete = simple_draw(card) is not None
+    from sabermetrics.intelligence.commander_substitutions import (
+        extended_profile,
+        function_facts,
+    )
+
+    extended = extended_profile(card)
+    if extended is not None:
+        return {
+            "id": stable_id(card),
+            "name": card["name"],
+            "functions": function_facts(extended),
+            "coverage_complete": True,
+        }
     # Pure draw is handled by the substitution proof. All other recognized
     # functions remain protected evidence; their absence means incomplete coverage.
     functions = (
@@ -109,7 +126,9 @@ def function_record(card):
     }
 
 
-def substitution_proof(outgoing, incoming, protected=(), commander=None):
+def substitution_proof(
+    outgoing, incoming, protected=(), commander=None, support_cards=()
+):
     result = {
         "outgoing": outgoing["name"],
         "incoming": incoming["name"],
@@ -120,9 +139,20 @@ def substitution_proof(outgoing, incoming, protected=(), commander=None):
         return {**result, "reason": "Explicitly protected commander or engine card."}
     old, new = simple_draw(outgoing), simple_draw(incoming)
     if old is None or new is None:
-        return result
+        from sabermetrics.intelligence.commander_substitutions import extended_proof
+
+        return extended_proof(outgoing, incoming, protected, commander, support_cards)
     if identity(outgoing) is None or identity(incoming) != identity(outgoing):
         return {**result, "reason": "Spell color identity must be preserved."}
+    from sabermetrics.intelligence.commander_substitutions import commander_preservation
+
+    contracts = commander_preservation(outgoing, incoming, commander)
+    if not contracts["allowed"]:
+        return {
+            **result,
+            "reason": "Commander contribution decreases.",
+            "commander": contracts,
+        }
     commander_text = (commander or {}).get("oracle_text") or ""
     cost_sensitive = re.search(
         r"mana value|converted mana cost|mana cost|cascade|discover|devotion|"
@@ -160,6 +190,7 @@ def substitution_proof(outgoing, incoming, protected=(), commander=None):
         "reason": "Complete simple-draw coverage; same timing, no greater casting demand, no less draw, strict resource or draw gain.",
         "before": old,
         "after": new,
+        "commander": contracts,
     }
 
 
@@ -171,6 +202,10 @@ def _hard_errors(cards, commander, budget, count):
     if colors is None:
         errors.append("commander_identity_unknown")
     for c in cards:
+        from sabermetrics.intelligence.eligibility import main_deck_eligible
+
+        if not main_deck_eligible(c):
+            errors.append("card_type_eligibility:" + c["name"])
         ci = identity(c)
         if ci is None or colors is None or not ci <= colors:
             errors.append("identity:" + c["name"])
@@ -216,7 +251,7 @@ def validate_transition(before, after, commander, budget, protected=()):
         i: [
             j
             for j, c in enumerate(added)
-            if substitution_proof(old, c, protected, commander)["allowed"]
+            if substitution_proof(old, c, protected, commander, before)["allowed"]
         ]
         for i, old in enumerate(removed)
     }
@@ -234,7 +269,7 @@ def validate_transition(before, after, commander, budget, protected=()):
 
     all_proved = len(removed) == len(added) and all(augment(i, set()) for i in edges)
     proofs = [
-        substitution_proof(removed[i], added[j], protected, commander)
+        substitution_proof(removed[i], added[j], protected, commander, before)
         for j, i in sorted(matched.items())
     ]
     errors = _hard_errors(after, commander, budget, len(before))
@@ -258,7 +293,7 @@ def validate_transition(before, after, commander, budget, protected=()):
         "reasons": reasons,
         "functions": receipt,
         "proofs": proofs,
-        "scope": "complete simple-draw substitutions only; baseline quality not certified",
+        "scope": "complete effect-family substitutions and detected commander contracts; baseline quality not certified",
     }
 
 
@@ -279,11 +314,19 @@ def guarded_repair(cards, candidates, commander, budget, power=3, protected=()):
                 baseline, baseline, commander, budget, protected
             ),
         }
+    from sabermetrics.intelligence.commander_substitutions import extended_profile
+    from sabermetrics.intelligence.eligibility import main_deck_eligible
+
+    def supported(card):
+        return main_deck_eligible(card) and (
+            simple_draw(card) is not None or extended_profile(card) is not None
+        )
+
     catalog = sorted(
         [
             c
             for c in candidates
-            if simple_draw(c) is not None
+            if supported(c)
             and price(c) is not None
             and identity(c) is not None
             and identity(c) <= colors
@@ -297,7 +340,7 @@ def guarded_repair(cards, candidates, commander, budget, power=3, protected=()):
         spent = sum(price(c) for c in deck)
         options = []
         for i, old in enumerate(deck):
-            if simple_draw(old) is None:
+            if not supported(old):
                 continue
             for new in catalog:
                 if (
@@ -305,13 +348,13 @@ def guarded_repair(cards, candidates, commander, budget, power=3, protected=()):
                     or spent - price(old) + price(new) > budget + 1e-6
                 ):
                     continue
-                proof = substitution_proof(old, new, protected, commander)
+                proof = substitution_proof(old, new, protected, commander, baseline)
                 if not proof["allowed"]:
                     continue
                 a, b = proof["before"], proof["after"]
                 options.append(
                     (
-                        -(b["draw"] - a["draw"]),
+                        -proof.get("effect_gain", b.get("draw", 0) - a.get("draw", 0)),
                         b["mana"] - a["mana"],
                         price(new),
                         new["name"],

@@ -14,6 +14,8 @@ class Card(BaseModel):
     name: str
     mana_cost: Optional[str] = None
     cmc: float
+    power: Optional[str] = None
+    toughness: Optional[str] = None
     type_line: str
     oracle_text: Optional[str] = None
     color_identity: List[str]
