@@ -19,6 +19,7 @@ class Experiment:
     preserve_functions: bool = True
     swap_policy: Literal["current", "off", "preserve"] = "current"
     rebalance_policy: Literal["current", "off", "preserve"] = "current"
+    draw_package_policy: Literal["current", "budgeted", "coverage"] = "current"
 
     def __post_init__(self):
         if (
@@ -45,6 +46,16 @@ class Experiment:
         for value in (self.swap_policy, self.rebalance_policy):
             if type(value) is not str or value not in _POLICY:
                 raise ValueError("Policy must be current, off, or preserve")
+        if type(
+            self.draw_package_policy
+        ) is not str or self.draw_package_policy not in (
+            "current",
+            "budgeted",
+            "coverage",
+        ):
+            raise ValueError(
+                "Draw package policy must be current, budgeted or coverage"
+            )
 
     def to_dict(self):
         return asdict(self)

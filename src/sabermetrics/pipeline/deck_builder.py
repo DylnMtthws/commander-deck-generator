@@ -170,9 +170,17 @@ class DeckBuilder:
         self,
         db_path: Path,
         progress_callback: Callable[[str, int], None] | None = None,
+        trace_names: tuple[str, ...] = (),
     ) -> None:
         self.db_path = db_path
         self._progress_callback = progress_callback
+        self._candidate_trace_names = trace_names
+
+    def _trace_candidates(self, stage, cards):
+        trace = getattr(self, "_candidate_path", None)
+        if trace is not None:
+            trace.record(stage, cards)
+            self._intelligence["candidate_path"] = trace.to_dict()
 
     def _emit_progress(self, stage: str) -> None:
         """Report a real pipeline stage. Progress is stage-boundary, not time."""
@@ -224,6 +232,10 @@ class DeckBuilder:
         self._stage_timings: dict[str, float] = {}
         self._engine_rationale = None
         self._intelligence = {}
+        from sabermetrics.intelligence.candidate_trace import CandidateTrace
+
+        names = getattr(self, "_candidate_trace_names", ())
+        self._candidate_path = CandidateTrace(names) if names else None
         self._strategy_reserved = []
 
         # --- Build trace watchlist and create tracer ---
@@ -284,6 +296,7 @@ class DeckBuilder:
         self._emit_progress("filter")
         candidates = self._filter_candidates(request, commander)
         candidates = self._load_role_tags(candidates)
+        self._trace_candidates("budget_filtered", candidates)
         evidence = getattr(self, "_selection_evidence", None)
         if evidence is not None and evidence.status == "available":
             rates = {k.casefold(): v for k, v in evidence.inclusion.items()}
@@ -307,6 +320,7 @@ class DeckBuilder:
         from sabermetrics.intelligence.strategy import make_plan, reserve_plan
 
         candidates = [annotate(c) for c in candidates if not facts_for(c).exclusion]
+        self._trace_candidates("annotated", candidates)
         self._strategy_plan = make_plan(
             commander.model_dump(), request.user_intent, request.power_target
         )
@@ -384,7 +398,9 @@ class DeckBuilder:
             and not self._function_guard_enabled
             else []
         )
+        self._trace_candidates("scored", candidates)
         candidates = self._pareto_filter(candidates)
+        self._trace_candidates("recalled", candidates)
         metrics["4_pareto"] = time.time() - t
         self._stage_counts["candidates_after_pareto"] = len(candidates)
         logger.info("Stage 2: %d candidates after Pareto filter", len(candidates))
@@ -622,6 +638,7 @@ class DeckBuilder:
         metrics["simulate"] = time.time() - t
 
         # --- Stage 8: Synthesis + Classify + Persist ---
+        self._trace_candidates("final", [a.card for a in all_assignments])
         if "upstream" in self._intelligence:
             from sabermetrics.intelligence.function_guard import validate_transition
             from sabermetrics.intelligence.upstream_guard import snapshot
@@ -1018,6 +1035,7 @@ class DeckBuilder:
             max_budget_usd=None,
         )
         self._color_legal_pool = legal
+        self._trace_candidates("color_format_legal", legal)
         return filter_by_budget(legal, request.budget_usd)
 
     def _load_role_tags(self, candidates: list[dict]) -> list[dict]:
@@ -1238,16 +1256,11 @@ class DeckBuilder:
                     _yaml.safe_load(_config_path("game_changers.yaml").read_text())
                     or {}
                 )
-                for v in (_gc.values() if isinstance(_gc, dict) else [_gc]):
-                    if isinstance(v, list):
-                        gc_names |= {
-                            (
-                                str(x).lower()
-                                if not isinstance(x, dict)
-                                else str(x.get("name", "")).lower()
-                            )
-                            for x in v
-                        }
+                from sabermetrics.intelligence.power_policy import (
+                    configured_game_changer_names,
+                )
+
+                gc_names = configured_game_changer_names(_gc)
             except (OSError, _yaml.YAMLError, ValueError, TypeError) as exc:
                 logger.warning(
                     "Bracket configuration unavailable (%s)", type(exc).__name__
@@ -1752,6 +1765,7 @@ class DeckBuilder:
 
         # 2. Draw
         draw_gen = DrawPackageGenerator(self.db_path)
+        self._trace_candidates("draw_pool", _pool_by_role("draw"))
         if getattr(self, "_draw_candidates", None):
             from sabermetrics.intelligence.draw_selection import select_package
 
@@ -1778,7 +1792,11 @@ class DeckBuilder:
                 template=template,
                 already_placed=placed_cards(),
                 role_tag_pool=_pool_by_role("draw"),
+                power_target=request.power_target,
             )
+        self._trace_candidates("draw_selected", [a.card for a in draw])
+        if hasattr(draw_gen, "selection_receipt"):
+            self._intelligence["draw_portfolio"] = draw_gen.selection_receipt
         all_assignments.extend(draw)
         budget_used += sum(float(a.card.get("price_usd", 0) or 0) for a in draw)
         _trace_infra(draw, "infra_draw")
@@ -1961,6 +1979,7 @@ class DeckBuilder:
         # role_targets steer greedy to the under-served roles first.
         # (reserved_count is now implicit in len(infrastructure).)
         diff_slots = max(0, 99 - len(infrastructure))
+        self._trace_candidates("infrastructure", [a.card for a in infrastructure])
         diff_assignments = greedy_fill(
             shell=infrastructure,
             candidates=candidates,
@@ -1973,6 +1992,7 @@ class DeckBuilder:
             type_targets=template.type_targets,
         )
         all_assignments = list(infrastructure) + diff_assignments
+        self._trace_candidates("greedy", [a.card for a in all_assignments])
         from sabermetrics.intelligence.experiment import current as active_policy
         from sabermetrics.intelligence.upstream_guard import snapshot
 

@@ -167,6 +167,7 @@ def main():
     p.add_argument("--repeat", type=int, default=0)
     p.add_argument("--arms", default="baseline,candidate")
     p.add_argument("--offline", action="store_true")
+    p.add_argument("--trace-card", action="append", default=[])
     p.add_argument(
         "--policy-json",
         type=Path,
@@ -226,7 +227,7 @@ def main():
             }
             builder = None
             try:
-                builder = builder_class(args.database, progress_callback=progress)
+                builder = builder_class(args.database, progress_callback=progress, trace_names=tuple(args.trace_card))
                 with using(replace(base_policy, draw_selection=enabled)):
                     result = builder.build(
                         DeckBuildRequest(

@@ -9,8 +9,8 @@ from pathlib import Path
 
 from sabermetrics.analytics.empirical_valuation import empirical_bonus
 from sabermetrics.config import settings
-from sabermetrics.pipeline.greedy_optimizer import is_playable_as_land
 from sabermetrics.models.template import DeckTemplate
+from sabermetrics.pipeline.greedy_optimizer import is_playable_as_land
 from sabermetrics.pipeline.slot_assigner import SlotAssignment
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ class DrawPackageGenerator:
         template: DeckTemplate,
         already_placed: list[dict],
         role_tag_pool: list[dict],
+        power_target: int = 3,
     ) -> list[SlotAssignment]:
         """Generate draw package sorted by CVAR, preferring repeatable draw.
 
@@ -98,6 +99,16 @@ class DrawPackageGenerator:
             candidates.append((card, cvar))
 
         candidates.sort(key=lambda x: x[1], reverse=True)
+        from sabermetrics.intelligence.experiment import current
+
+        if current().draw_package_policy != "current":
+            from sabermetrics.intelligence.draw_portfolio import select_portfolio
+
+            candidates, self.selection_receipt = select_portfolio(
+                candidates, target_count, budget_remaining,
+                diversity=current().draw_package_policy == "coverage",
+                max_mana_value=3 if power_target == 5 else 4 if power_target == 4 else 5,
+            )
 
         for card, score in candidates:
             if len(assignments) >= target_count:
