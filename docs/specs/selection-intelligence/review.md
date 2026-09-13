@@ -13,7 +13,7 @@ legacy inclusion percentages, fetch-land admission and land-play cast semantics.
 The coordinator implemented candidate recall, strategy requirements, empirical
 scoring, profile grounding, final verdict provenance and native sampling.
 
-Python regression gate: 1099 passed, 21 skipped. Native sanitizer gate: 132 passed.
+Python regression gate: 1105 passed, 21 skipped. Native sanitizer gate: 132 passed.
 Repository-wide type checking remains report-only with pre-existing findings;
 new modules were checked and newly introduced type errors corrected.
 

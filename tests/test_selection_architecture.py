@@ -138,3 +138,29 @@ def test_land_play_is_not_a_cast():
     assert not casting_options(
         {"name": "Island", "type_line": "Basic Land — Island", "cmc": 0}
     )[0]["is_cast"]
+
+
+def test_graveyard_land_access_requires_directional_clause():
+    from sabermetrics.intelligence.strategy import matches_requirement
+
+    positive = [
+        "Return all land cards from your graveyard to the battlefield tapped.",
+        "Return up to three target land cards from your graveyard to your hand.",
+        "You may play lands from your graveyard.",
+        "During each of your turns, you may play a land and cast a permanent spell of each permanent type from your graveyard.",
+        "Whenever one or more land cards are put into your graveyard from your library, put them onto the battlefield tapped.",
+    ]
+    negative = [
+        "This land enters tapped. When this land enters, exile target player's graveyard.",
+        "You may put a land card from your hand onto the battlefield. Escape—Exile five cards from your graveyard.",
+        "You may play an additional land. Whenever a land card is put into your graveyard, draw a card.",
+        "This creature gets +1/+1 for each creature card in your graveyard. Search your library for a land card, put it onto the battlefield.",
+        "During your turn, nonland permanent cards in your graveyard have retrace.",
+        'You get an emblem with "You may play lands from your graveyard."',
+    ]
+    for text in positive:
+        assert matches_requirement({"oracle_text": text}, "graveyard_land_access"), text
+    for text in negative:
+        assert not matches_requirement(
+            {"oracle_text": text}, "graveyard_land_access"
+        ), text

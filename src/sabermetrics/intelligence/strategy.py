@@ -226,10 +226,16 @@ def matches_requirement(card: dict, requirement: str) -> bool:
             for t in requirement.split(":", 1)[1].split(",")
         )
     if requirement == "graveyard_land_access":
-        return (
-            "land" in text
-            and "graveyard" in text
-            and any(word in text for word in ("return", "play", "put"))
+        # Direction and target must belong to the same supported clause.
+        # Merely mentioning lands and a graveyard (or "player") proves nothing.
+        clauses = re.sub(r'"[^"\n]*"|\([^)]*\)', "", text)
+        return any(
+            re.search(pattern, clauses)
+            for pattern in (
+                r"\breturn\b[^.\n]*\bland cards? from your graveyard to (?:your hand|the battlefield)",
+                r"\bplay\b[^.\n]*\blands?\b[^.\n]*\bfrom your graveyard\b",
+                r"\bland cards? are put into your graveyard from your library, put them onto the battlefield\b",
+            )
         )
     if requirement == "self_mill":
         return (
