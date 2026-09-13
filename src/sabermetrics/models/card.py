@@ -19,6 +19,8 @@ class Card(BaseModel):
     type_line: str
     oracle_text: Optional[str] = None
     color_identity: List[str]
+    # None means unknown, while [] is explicitly colorless. Never infer from identity.
+    colors: list[str] | None = None
     keywords: List[str] = Field(default_factory=list)
     is_legal_commander: bool
     is_legal_in_99: bool

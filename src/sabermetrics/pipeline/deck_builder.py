@@ -759,6 +759,21 @@ class DeckBuilder:
         self._intelligence["selection_audit"] = summarize_selection_audit(
             [e.model_dump() for e in self._tracer._events]
         )
+        from sabermetrics.intelligence.prerequisite_evidence import evaluate_prerequisites
+
+        final_cards = [a.card for a in all_assignments]
+        prerequisite_rows = []
+        for card in final_cards:
+            evidence = evaluate_prerequisites(card, final_cards, catalog_complete=True)
+            if evidence["abilities"]:
+                prerequisite_rows.append({"card": card["name"], **evidence})
+        self._intelligence["prerequisites"] = {
+            "coverage": "incomplete",
+            "cut_authorized": False,
+            "examined_cards": len(final_cards),
+            "matched_cards": len(prerequisite_rows),
+            "cards": prerequisite_rows,
+        }
         self._intelligence.update(
             {
                 "version": "generation-intelligence.v1",
@@ -945,24 +960,9 @@ class DeckBuilder:
             if price_row:
                 row_dict["current_price_usd"] = price_row["price_usd"]
 
-            return Card(
-                id=row_dict["id"],
-                oracle_id=row_dict["oracle_id"],
-                name=row_dict["name"],
-                mana_cost=row_dict.get("mana_cost"),
-                cmc=row_dict["cmc"],
-                type_line=row_dict["type_line"],
-                oracle_text=row_dict.get("oracle_text"),
-                color_identity=row_dict["color_identity"],
-                keywords=row_dict.get("keywords", []),
-                is_legal_commander=True,
-                is_legal_in_99=bool(row_dict.get("is_legal_in_99", True)),
-                set_code=row_dict["set_code"],
-                rarity=row_dict["rarity"],
-                image_uri=row_dict.get("image_uri"),
-                last_updated=row_dict.get("last_updated", datetime.now(UTC)),
-                current_price_usd=row_dict.get("current_price_usd"),
-            )
+            from sabermetrics.db import row_to_card
+
+            return row_to_card(row_dict)
         finally:
             conn.close()
 
@@ -2836,6 +2836,9 @@ class DeckBuilder:
             if isinstance(kw, str):
                 kw = json.loads(kw)
 
+            colors = card_data.get("colors")
+            if isinstance(colors, str):
+                colors = json.loads(colors) if colors else None
             card_model = Card(
                 id=card_data.get("id", ""),
                 oracle_id=card_data.get("oracle_id", ""),
@@ -2855,6 +2858,7 @@ class DeckBuilder:
                 type_line=card_data.get("type_line", ""),
                 oracle_text=card_data.get("oracle_text"),
                 color_identity=ci,
+                colors=colors,
                 keywords=kw,
                 is_legal_commander=bool(card_data.get("is_legal_commander", False)),
                 is_legal_in_99=bool(card_data.get("is_legal_in_99", True)),
@@ -3152,14 +3156,16 @@ def _is_ramp(type_line: str, oracle_text: str) -> bool:
 
 def _heuristic_role(card: dict) -> str:
     """Classify card role by heuristics when LLM is unavailable."""
-    from sabermetrics.intelligence.commander_substitutions import extended_profile
-    from sabermetrics.pipeline.slot_assigner import _classify_card_role
+    from sabermetrics.pipeline.slot_assigner import (
+        _classify_card_role,
+        complete_damage_role,
+    )
 
     # Complete creature-targetable damage evidence must survive an incomplete
     # cached facts record, including after a guarded replacement is persisted.
-    profile = extended_profile(card)
-    if profile and profile["family"] == "damage":
-        return "removal"
+    damage_role = complete_damage_role(card)
+    if damage_role is not None:
+        return damage_role
     if "_facts" in card:
         roles = card["_facts"]["roles"]
         for role in ("land", "ramp", "draw", "removal", "protection", "wincon"):

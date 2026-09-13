@@ -1,0 +1,37 @@
+{
+  "summary": {
+    "completed": 22,
+    "recorded": 22,
+    "cap": 22,
+    "failed": 0,
+    "hard_failures": 0,
+    "validation_errors": [],
+    "internal_improvements": [
+      "krenko-grid-01",
+      "krenko-grid-03",
+      "krenko-grid-05",
+      "krenko-grid-07",
+      "krenko-grid-09",
+      "krenko-grid-11",
+      "krenko-grid-13",
+      "krenko-grid-15"
+    ],
+    "model_cost_sum": 0.0,
+    "paid_calls_sent": 0,
+    "offline_blocked_model_attempts": 0,
+    "scope": "Development exposed; 16 Krenko grid + six other production controls; no heldout or live model quality claims.",
+    "independent_role_failures": 0,
+    "mechanical_acceptance": "pass",
+    "strategic_acceptance": "FAIL: Krenko loses useful support and selects Bearer; Vivi drops Mystic Remora; scalar objective is not strategic safety proof",
+    "cross_revision_membership_changed_jobs": 18,
+    "historical_unsafe_transitions_rejected": 5
+  },
+  "cohort_source": {
+    "source": "/Users/dylan/Projects/generator-selection-repair-roles-source",
+    "source_sha256": "cc36adb5b523f61cd51af9657f295093168502109f08b304446074261626b94b",
+    "source_and_scripts_sha256": "b6f77749a2fc1a440d0453f07e618e7f1471de5120e95cc8aabfdf2294a42585",
+    "data_sha256": "3592bf8f2c5ef7a51b602b118e32b08d7da2375f29e6b620bba2a3d7462fee52",
+    "database_provenance": "SQLite backup of prior corrected a.db; cached commander_profiles copied from prior corrected b.db; only public catalog/profiles and prior experimental outputs; no production"
+  },
+  "post_cohort_change": "Diagnostic warning wording only: sacrifice feasibility unproven; no selection/control-flow change."
+}

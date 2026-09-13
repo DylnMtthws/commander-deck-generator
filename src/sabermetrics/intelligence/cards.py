@@ -494,19 +494,34 @@ def annotate(card: dict) -> dict:
     except (ValueError, TypeError):
         old = []
     result["_discovery_roles"] = old
+    result.pop("_role_evidence", None)
+    from sabermetrics.intelligence.commander_substitutions import extended_profile
+
+    effect = extended_profile(card)
+    verified = set(facts.roles)
+    if effect and effect["family"] == "damage":
+        # The older capability snapshot can miss this complete spell grammar.
+        # Keep that snapshot intact; record the independent proof explicitly.
+        verified = {"removal"}
+        result["_role_evidence"] = {
+            "source": "complete_damage_effect",
+            "evidence": effect["evidence"],
+        }
     # Preserve specialized discovery roles, but do not use unsupported ramp,
     # draw/removal/board-wipe claims as optimizer requirements.
     unverified = {"ramp", "draw", "removal", "board_wipe", "recursion"}
     roles = set(old) - unverified
-    roles.update(facts.roles)
+    roles.update(verified)
+    if effect and effect["family"] == "damage":
+        roles = verified
     ordered = order_roles(roles) or ["utility"]
     result["role_tags"] = json.dumps(ordered)
     # Verified and discovery-only claims stay distinguishable: a discovery tag
     # this parser could not confirm is unknown, never a confirmed absence.
-    result["_verified_roles"] = list(facts.roles)
-    result["_discovery_only_roles"] = sorted(set(old) - set(facts.roles))
+    result["_verified_roles"] = order_roles(verified)
+    result["_discovery_only_roles"] = sorted(set(old) - verified)
     result["_unverified_discovery_roles"] = sorted(
-        (set(old) & unverified) - set(facts.roles)
+        (set(old) & unverified) - verified
     )
     result["_primary_role"] = ordered[0]
     result["_facts"] = facts.model_dump()

@@ -6,13 +6,24 @@ import json
 import sqlite3
 import time
 import traceback
+from dataclasses import replace
 from pathlib import Path
 
 from run_selection_study import assess
 
 from sabermetrics.intelligence.draw_selection import audit
-from sabermetrics.intelligence.experiment import Experiment, using
+from sabermetrics.intelligence.experiment import Experiment, production_policy, using
 from sabermetrics.pipeline.deck_builder import DeckBuilder, DeckBuildRequest
+
+
+def offline_builder_class():
+    """Disable model review without inheriting budget-screen template tuning."""
+    from screen_budget import Replay
+
+    class ProductionReplay(Replay):
+        _derive_template = DeckBuilder._derive_template
+
+    return ProductionReplay
 
 
 def output_cards(data):
@@ -28,6 +39,22 @@ def output_cards(data):
     return cards
 
 
+def damage_role_failures(data):
+    """Audit all persisted damage spells, including unchanged baseline cards."""
+    from sabermetrics.pipeline.slot_assigner import complete_damage_role
+
+    return [
+        {
+            "card": wrapper["card"]["name"],
+            "actual": wrapper["slot_role"],
+            "expected": "removal",
+        }
+        for wrapper in data["deck"]["cards"]
+        if complete_damage_role(wrapper["card"]) == "removal"
+        and wrapper["slot_role"] != "removal"
+    ]
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--database", type=Path, required=True)
@@ -39,16 +66,26 @@ def main():
     p.add_argument("--repeat", type=int, default=0)
     p.add_argument("--arms", default="baseline,candidate")
     p.add_argument("--offline", action="store_true")
+    p.add_argument(
+        "--policy-json",
+        type=Path,
+        help="Explicit registered scoring settings; arm controls guarded selection",
+    )
     args = p.parse_args()
+    base_policy = production_policy()
+    if args.policy_json:
+        base_policy = Experiment(**json.loads(args.policy_json.read_text()))
+        if not base_policy.preserve_functions:
+            p.error("Study runner does not admit unguarded replacement policies")
     args.output.mkdir(parents=True, exist_ok=True)
     builder_class = DeckBuilder
     if args.offline:
-        from screen_budget import Replay, forbidden
+        from screen_budget import forbidden
 
         from sabermetrics.reasoning.client import ModelClient
 
         ModelClient.call_with_cache = forbidden
-        builder_class = Replay
+        builder_class = offline_builder_class()
     cases = json.loads(args.cases.read_text())["cases"]
     if args.only:
         cases = [c for c in cases if c["case_id"] in args.only.split(",")]
@@ -64,7 +101,9 @@ def main():
             (case["name"],),
         ).fetchone()[0]
         con.close()
-        arms = [(arm, arm == "candidate") for arm in case.get("arms", args.arms).split(",")]
+        arms = [
+            (arm, arm == "candidate") for arm in case.get("arms", args.arms).split(",")
+        ]
         if any(arm not in {"baseline", "candidate"} for arm, _ in arms):
             p.error("--arms must contain baseline and/or candidate")
         if (index + args.repeat) % 2:
@@ -82,18 +121,11 @@ def main():
                 "repeat": args.repeat,
                 "source_sha256": h.hexdigest(),
                 "offline": args.offline,
+                "policy": replace(base_policy, draw_selection=enabled).to_dict(),
             }
             try:
                 builder = builder_class(args.database, progress_callback=progress)
-                with using(
-                    Experiment(
-                        land_evidence_weight=10,
-                        land_risk_weight=1,
-                        budget_recall=12,
-                        draw_selection=enabled,
-                        preserve_functions=True,
-                    )
-                ):
+                with using(replace(base_policy, draw_selection=enabled)):
                     result = builder.build(
                         DeckBuildRequest(
                             commander_id=cid,
@@ -130,6 +162,9 @@ def main():
                 row["reported_guard"] = receipt.get("guard")
                 row["decisions"] = receipt.get("decisions", [])
                 row["validation_errors"] = []
+                row["damage_role_failures"] = damage_role_failures(data)
+                if row["damage_role_failures"]:
+                    row["validation_errors"].append("complete_damage_role_mismatch")
                 if enabled:
                     from sabermetrics.intelligence.function_guard import (
                         validate_transition,

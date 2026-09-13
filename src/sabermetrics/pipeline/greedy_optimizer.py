@@ -24,7 +24,11 @@ from sabermetrics.analytics.role_targets import RoleTarget, role_need_multiplier
 from sabermetrics.analytics.synergy_matrix import SynergyMatrix
 from sabermetrics.config import settings
 from sabermetrics.models.template import DeckTemplate
-from sabermetrics.pipeline.slot_assigner import SlotAssignment, _classify_card_role
+from sabermetrics.pipeline.slot_assigner import (
+    SlotAssignment,
+    _classify_card_role,
+    complete_damage_role,
+)
 
 if TYPE_CHECKING:
     from sabermetrics.pipeline.trace import GenerationTracer
@@ -1117,6 +1121,9 @@ def _empirical_bonus(card: dict) -> float:
 
 def _get_card_roles(card: dict) -> list[str]:
     """Extract role tags from a card dict."""
+    complete_role = complete_damage_role(card)
+    if complete_role is not None:
+        return [complete_role]
     rt_raw = card.get("role_tags", "[]")
     if isinstance(rt_raw, str):
         try:

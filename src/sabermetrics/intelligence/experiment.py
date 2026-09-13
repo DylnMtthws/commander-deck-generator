@@ -50,6 +50,11 @@ def current() -> Experiment:
     return _current.get()
 
 
+def production_policy() -> Experiment:
+    """Exact deployed web policy, shared with evaluation rather than re-created."""
+    return Experiment(draw_selection=True, preserve_functions=True)
+
+
 @contextmanager
 def using(experiment: Experiment):
     token = _current.set(experiment)
