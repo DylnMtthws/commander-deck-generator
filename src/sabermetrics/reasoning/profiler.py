@@ -41,6 +41,7 @@ class ProfileRequest(BaseModel):
     commander_id: str
     user_intent: str | None = None
     force_refresh: bool = False
+    evidence_key: str | None = None
 
 
 class ProfileResult(BaseModel):
@@ -57,6 +58,7 @@ class ProfileManager:
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
+        self.selection_evidence: dict | None = None
         self._evidence_aggregator = EvidenceAggregator(db_path)
 
     def generate_profile(self, request: ProfileRequest) -> ProfileResult:
@@ -92,6 +94,15 @@ class ProfileManager:
             else None
         )
 
+        if request.evidence_key:
+            intent_hash = hashlib.sha256(
+                (
+                    (request.user_intent or "")
+                    + "|selection-v1|"
+                    + request.evidence_key
+                ).encode()
+            ).hexdigest()[:16]
+
         # Check cache
         if not request.force_refresh:
             cached = self._get_cached_profile(
@@ -120,6 +131,23 @@ class ProfileManager:
             request.commander_id,
             user_intent=request.user_intent,
         )
+
+        if self.selection_evidence:
+            source = self.selection_evidence
+            evidence.edhrec_data = {
+                "total_decks": source["sample_size"],
+                "top_cards": [
+                    {"card_name": n, "inclusion_pct": r * 100}
+                    for n, r in sorted(
+                        source["inclusion"].items(), key=lambda item: -item[1]
+                    )
+                ],
+                "source_url": source["source_url"],
+                "cohort": source["cohort"],
+                "limitations": [
+                    "Observed inclusion, not causal win equity or verified combo mechanics."
+                ],
+            }
 
         # Generate profile via LLM
         try:

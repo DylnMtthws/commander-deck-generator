@@ -225,13 +225,19 @@ class FitScorer:
             card_lines.append(
                 f"{i + 1}. {card.get('name', '?')} | {card.get('mana_cost', 'N/A')} | "
                 f"{card.get('type_line', '?')} | ${card.get('price_usd', 0) or 0:.2f}\n"
-                f"   Text: {(card.get('oracle_text') or 'No text')[:400]}\n"
+                f"   Text: {(card.get('oracle_text') or 'No text')[:1800]}\n"
                 f"   Evidence: {evidence}"
             )
 
         system = (
             "You are the final quality gate for a Commander deck generator. "
             "Score each listed card 1-10 for fit with the deck's strategy. "
+            "Use printed mana costs exactly. Printed mana value is not mana actually paid. "
+            "Pitch/free casting costs require their stated cards, life, commander or other conditions. "
+            "A spell copy is not cast unless an effect explicitly instructs casting. "
+            "Noncreature spells include artifacts and enchantments, not only instants/sorceries. "
+            "Check once-per-turn limits. Do not invent a tutor target absent from the current deck. "
+            "Keep reasoning to two short factual sentences per card; express uncertainty instead of speculative chains. "
             "Unavailable inclusion data is unknown, never zero inclusion or evidence against a card. "
             "When a verified decklist sample IS available, a card with near-zero inclusion needs a strong "
             "text-based justification to score above 3 -- community absence "
