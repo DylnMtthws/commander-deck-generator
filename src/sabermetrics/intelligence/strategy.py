@@ -46,11 +46,24 @@ def make_plan(commander: dict, intent: str | None, power: int = 3) -> StrategyPl
             requirements = {"counter_permanent": 10}
         else:
             # Typal requirements arise from rules text, not commander names.
-            for tribe in ("dragon", "vampire", "goblin", "elf", "zombie", "merfolk"):
-                if re.search(rf"\b{tribe}s?\b", oracle) and (
+            for tribe in (
+                "dragon",
+                "vampire",
+                "goblin",
+                "elf",
+                "zombie",
+                "merfolk",
+                "angel",
+            ):
+                plural_pattern = r"elves|elf" if tribe == "elf" else rf"{tribe}s?"
+                if re.search(rf"\b(?:{plural_pattern})\b", oracle) and (
                     "spells you cast" in oracle
                     or "spell" in oracle
                     or "number of" in oracle
+                    or re.search(
+                        rf"tap (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) untapped (?:{plural_pattern}) you control",
+                        oracle,
+                    )
                 ):
                     archetype = "typal"
                     requirements = {"creature_type:" + tribe: 16}

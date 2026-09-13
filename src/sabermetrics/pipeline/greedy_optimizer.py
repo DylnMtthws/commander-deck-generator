@@ -24,7 +24,7 @@ from sabermetrics.analytics.role_targets import RoleTarget, role_need_multiplier
 from sabermetrics.analytics.synergy_matrix import SynergyMatrix
 from sabermetrics.config import settings
 from sabermetrics.models.template import DeckTemplate
-from sabermetrics.pipeline.slot_assigner import SlotAssignment
+from sabermetrics.pipeline.slot_assigner import SlotAssignment, _classify_card_role
 
 if TYPE_CHECKING:
     from sabermetrics.pipeline.trace import GenerationTracer
@@ -591,7 +591,7 @@ def _best_single_upgrade(
             trial = list(deck)
             trial[i] = SlotAssignment(
                 card=cand,
-                slot_role=a.slot_role,
+                slot_role=_classify_card_role(cand),
                 score=float(cand.get("_cvar_score", 0.0) or 0.0),
             )
             gain = objective(trial) - base
@@ -708,7 +708,7 @@ def rebalance_budget(
         old_name = deck[i].card.get("name", "")
         deck[i] = SlotAssignment(
             card=cand,
-            slot_role=deck[i].slot_role,
+            slot_role=_classify_card_role(cand),
             score=float(cand.get("_cvar_score", 0.0) or 0.0),
         )
         budget_left -= price_diff
@@ -746,7 +746,7 @@ def rebalance_budget(
             trial = list(deck)
             trial[i] = SlotAssignment(
                 card=cand,
-                slot_role=a.slot_role,
+                slot_role=_classify_card_role(cand),
                 score=float(cand.get("_cvar_score", 0.0) or 0.0),
             )
             obj = objective(trial)
@@ -762,7 +762,7 @@ def rebalance_budget(
         trial = list(deck)
         trial[i] = SlotAssignment(
             card=best_sub,
-            slot_role=a.slot_role,
+            slot_role=_classify_card_role(best_sub),
             score=float(best_sub.get("_cvar_score", 0.0) or 0.0),
         )
         trial_budget = freed + budget_left
@@ -776,7 +776,7 @@ def rebalance_budget(
             j, cand, gain, price_diff = move
             trial[j] = SlotAssignment(
                 card=cand,
-                slot_role=trial[j].slot_role,
+                slot_role=_classify_card_role(cand),
                 score=float(cand.get("_cvar_score", 0.0) or 0.0),
             )
             trial_budget -= price_diff
@@ -822,7 +822,7 @@ def rebalance_budget(
                 trial = list(deck)
                 trial[i] = SlotAssignment(
                     card=cand,
-                    slot_role=a.slot_role,
+                    slot_role=_classify_card_role(cand),
                     score=float(cand.get("_cvar_score", 0.0) or 0.0),
                 )
                 loss = base_obj - objective(trial)
@@ -837,7 +837,7 @@ def rebalance_budget(
         )
         deck[i] = SlotAssignment(
             card=cand,
-            slot_role=deck[i].slot_role,
+            slot_role=_classify_card_role(cand),
             score=float(cand.get("_cvar_score", 0.0) or 0.0),
         )
         stats["downgrades"] += 1

@@ -361,6 +361,17 @@ class DeckBuilder:
                     roles.remove("wincon")
                     c["role_tags"] = json.dumps(roles or ["utility"])
         metrics["score"] = time.time() - t
+        from sabermetrics.intelligence.experiment import current as draw_experiment
+
+        self._draw_enabled = draw_experiment().draw_selection
+        # No automatic replacement when the policy cannot value competitive
+        # engines or commander-based toughness/defender card advantage.
+        self._draw_audit_only = (
+            request.power_target >= 4 or "defender" in commander.oracle_text.lower()
+        )
+        self._draw_candidates = (
+            candidates if self._draw_enabled and not self._draw_audit_only else []
+        )
         candidates = self._pareto_filter(candidates)
         metrics["4_pareto"] = time.time() - t
         self._stage_counts["candidates_after_pareto"] = len(candidates)
@@ -495,6 +506,35 @@ class DeckBuilder:
         # (Stage 7 budget rebalancing now runs inside _optimize_differentiators,
         # where the synergy matrix and role targets it evaluates against live.)
 
+        # Mechanically supported draw repair inspects the full legal scored pool,
+        # independent of legacy slot labels. Newly selected cards do not inherit
+        # an LLM-review pass; the deterministic scope is recorded explicitly.
+        if self._draw_candidates:
+            from sabermetrics.intelligence.draw_selection import repair as repair_draw
+            from sabermetrics.pipeline.slot_assigner import SlotAssignment
+
+            fixed, receipt = repair_draw(
+                [a.card for a in all_assignments],
+                self._draw_candidates,
+                commander.model_dump(),
+                request.budget_usd,
+                request.power_target,
+                protected=set(self._protected_names or ())
+                | set(getattr(self, "_engine_protect_names", ()) or ()),
+                type_floors=template.type_floors,
+            )
+            old = {a.card["name"]: a for a in all_assignments}
+            all_assignments = [
+                (
+                    old[c["name"]].model_copy(update={"card": c})
+                    if c["name"] in old
+                    else SlotAssignment(card=c, slot_role="draw", score=0.0)
+                )
+                for c in fixed
+            ]
+            self._intelligence["draw_selection"] = receipt
+            self._trace_engine_snapshot("draw_selection", all_assignments)
+
         # --- Stage 7b: Enforce Commander legality as a hard invariant ---
         all_assignments = self._enforce_legality(
             all_assignments,
@@ -610,6 +650,37 @@ class DeckBuilder:
             commander_oracle=commander.oracle_text,
             legality_backfill=self._legality_backfill,
         )
+        if self._draw_enabled:
+            from sabermetrics.intelligence.draw_selection import audit as audit_draw
+            from sabermetrics.pipeline.quality import QualityItem
+
+            final_draw = audit_draw(
+                [a.card for a in all_assignments],
+                commander.model_dump(),
+                request.power_target,
+            )
+            receipt = self._intelligence.setdefault(
+                "draw_selection",
+                {
+                    "status": "unresolved",
+                    "mode": "audit_only",
+                    "reason": "Automatic intervention disabled for unmodeled high-power or defender strategy context.",
+                    "decisions": [],
+                },
+            )
+            receipt["final"] = final_draw
+            if final_draw["credible"] < receipt.get("target", 99) or final_draw[
+                "independent"
+            ] < receipt.get("independent_target", 99):
+                receipt["status"] = "unresolved"
+                acceptance.warnings.append(
+                    QualityItem(
+                        severity="warning",
+                        code="draw_package_unresolved",
+                        message="Supported card-advantage requirement remains unresolved; this deck has not passed draw-package validation.",
+                    )
+                )
+
         if acceptance.failures:
             raise FatalError(
                 "Final deck validation failed: "
@@ -1602,14 +1673,33 @@ class DeckBuilder:
 
         # 2. Draw
         draw_gen = DrawPackageGenerator(self.db_path)
-        draw = draw_gen.generate(
-            color_identity=colors,
-            target_count=template.draw_count,
-            budget_remaining=role_budget(0.10),
-            template=template,
-            already_placed=placed_cards(),
-            role_tag_pool=_pool_by_role("draw"),
-        )
+        if getattr(self, "_draw_candidates", None):
+            from sabermetrics.intelligence.draw_selection import select_package
+
+            package = select_package(
+                self._draw_candidates,
+                placed_cards(),
+                commander.model_dump(),
+                role_budget(0.15),
+                template.draw_count,
+                request.power_target,
+            )
+            draw = [
+                SlotAssignment(
+                    card=c, slot_role="draw", score=float(c.get("_cvar_score") or 0)
+                )
+                for c in package
+            ]
+            self._protected_names |= {c["name"] for c in package}
+        else:
+            draw = draw_gen.generate(
+                color_identity=colors,
+                target_count=template.draw_count,
+                budget_remaining=role_budget(0.10),
+                template=template,
+                already_placed=placed_cards(),
+                role_tag_pool=_pool_by_role("draw"),
+            )
         all_assignments.extend(draw)
         budget_used += sum(float(a.card.get("price_usd", 0) or 0) for a in draw)
         _trace_infra(draw, "infra_draw")
@@ -2036,7 +2126,7 @@ class DeckBuilder:
                 )
                 assignments[idx] = SlotAssignment(
                     card=incoming,
-                    slot_role=outgoing.slot_role,
+                    slot_role=_heuristic_role(incoming),
                     score=score,
                     alternatives=[],
                 )

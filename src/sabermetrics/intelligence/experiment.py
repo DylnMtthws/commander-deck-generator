@@ -12,8 +12,11 @@ class Experiment:
     land_evidence_weight: float = 0.0
     land_risk_weight: float = 0.0
     budget_recall: int = 0
+    draw_selection: bool = False
 
     def __post_init__(self):
+        if type(self.draw_selection) is not bool:
+            raise ValueError("Draw selection control must be boolean")
         for value in (
             self.evidence_weight,
             self.land_evidence_weight,
