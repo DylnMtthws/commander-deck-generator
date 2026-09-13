@@ -622,6 +622,20 @@ class DeckBuilder:
         metrics["simulate"] = time.time() - t
 
         # --- Stage 8: Synthesis + Classify + Persist ---
+        if "upstream" in self._intelligence:
+            from sabermetrics.intelligence.function_guard import validate_transition
+            from sabermetrics.intelligence.upstream_guard import snapshot
+
+            upstream = self._intelligence["upstream"]
+            upstream["snapshots"]["final"] = snapshot(all_assignments)
+            upstream["cumulative_validation"] = validate_transition(
+                upstream["snapshots"]["greedy"],
+                upstream["snapshots"]["final"],
+                commander.model_dump(),
+                request.budget_usd,
+                set(self._protected_names or ())
+                | set(getattr(self, "_engine_protect_names", ()) or ()),
+            )
         self._validate_no_commander_in_99(all_assignments, commander)
         total_price = sum(
             max(0.0, float(a.card.get("price_usd", 0) or 0)) for a in all_assignments
@@ -759,7 +773,9 @@ class DeckBuilder:
         self._intelligence["selection_audit"] = summarize_selection_audit(
             [e.model_dump() for e in self._tracer._events]
         )
-        from sabermetrics.intelligence.prerequisite_evidence import evaluate_prerequisites
+        from sabermetrics.intelligence.prerequisite_evidence import (
+            evaluate_prerequisites,
+        )
 
         final_cards = [a.card for a in all_assignments]
         prerequisite_rows = []
@@ -1957,6 +1973,17 @@ class DeckBuilder:
             type_targets=template.type_targets,
         )
         all_assignments = list(infrastructure) + diff_assignments
+        from sabermetrics.intelligence.experiment import current as active_policy
+        from sabermetrics.intelligence.upstream_guard import snapshot
+
+        if not hasattr(self, "_intelligence"):
+            self._intelligence = {}
+        upstream = {
+            "policy": active_policy().to_dict(),
+            "snapshots": {"greedy": snapshot(all_assignments)},
+            "transactions": [],
+        }
+        self._intelligence["upstream"] = upstream
 
         from sabermetrics.intelligence.alternatives import choose_strategy_variant
         from sabermetrics.intelligence.strategy import StrategyPlan
@@ -1974,6 +2001,7 @@ class DeckBuilder:
         )
         if hasattr(self, "_intelligence"):
             self._intelligence["strategy_comparisons"] = variants
+        upstream["snapshots"]["after_strategy_variant"] = snapshot(all_assignments)
 
         self._emit_progress("refine")
         # 4. Swap refinement (infrastructure cards eligible for swap)
@@ -1989,6 +2017,8 @@ class DeckBuilder:
             protected_names=protected,
             tracer=self._tracer,
             profile_signals=prof_signals,
+            commander=commander.model_dump(mode="json"),
+            transaction_log=upstream["transactions"],
         )
         self._trace_engine_snapshot("swaps", all_assignments)
 
@@ -2014,8 +2044,11 @@ class DeckBuilder:
             profile_signals=prof_signals,
             protected_names=protected,
             tracer=self._tracer,
+            commander=commander.model_dump(mode="json"),
+            transaction_log=upstream["transactions"],
         )
         self._trace_engine_snapshot("rebalance", all_assignments)
+        upstream["snapshots"]["after_rebalance"] = snapshot(all_assignments)
 
         # 5.5 Engine-floor repair: meet hard subtype minimums (engine-30
         # rule) that soft scoring pressure never reaches -- the type-need
@@ -2089,6 +2122,7 @@ class DeckBuilder:
                 profile_signals=prof_signals,
             ),
         }
+        upstream["snapshots"]["after_optimizer_review"] = snapshot(all_assignments)
         return all_assignments, metrics
 
     def _enforce_type_floors(

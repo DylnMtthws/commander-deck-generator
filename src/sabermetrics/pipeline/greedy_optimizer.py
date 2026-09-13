@@ -23,6 +23,7 @@ from sabermetrics.analytics.empirical_valuation import empirical_bonus
 from sabermetrics.analytics.role_targets import RoleTarget, role_need_multiplier
 from sabermetrics.analytics.synergy_matrix import SynergyMatrix
 from sabermetrics.config import settings
+from sabermetrics.intelligence.upstream_guard import preserve_stage
 from sabermetrics.models.template import DeckTemplate
 from sabermetrics.pipeline.slot_assigner import (
     SlotAssignment,
@@ -332,6 +333,7 @@ def greedy_fill(
     return assignments
 
 
+@preserve_stage("swap_policy", "swap")
 def swap_refine(
     deck: list[SlotAssignment],
     candidates: list[dict],
@@ -343,6 +345,8 @@ def swap_refine(
     protected_names: set[str] | None = None,
     tracer: GenerationTracer | None = None,
     profile_signals: ProfileSignals | None = None,
+    commander: dict | None = None,
+    transaction_log: list | None = None,
 ) -> tuple[list[SlotAssignment], int]:
     """Improve deck by swapping cards if objective improves.
 
@@ -363,6 +367,11 @@ def swap_refine(
     Returns:
         Tuple of (improved deck, total swaps made).
     """
+    from sabermetrics.intelligence import experiment
+
+    if experiment.current().swap_policy == "off":
+        return deck, 0
+
     total_swaps = 0
     deck_names = {a.card.get("name", "") for a in deck}
 
@@ -605,6 +614,7 @@ def _best_single_upgrade(
     return best
 
 
+@preserve_stage("rebalance_policy", "rebalance")
 def rebalance_budget(
     deck: list[SlotAssignment],
     candidates: list[dict],
@@ -617,6 +627,8 @@ def rebalance_budget(
     max_upgrade_moves: int = 12,
     max_expensive_checked: int = 5,
     tracer: GenerationTracer | None = None,
+    commander: dict | None = None,
+    transaction_log: list | None = None,
 ) -> tuple[list[SlotAssignment], dict]:
     """Stage 7: portfolio rebalancing under the budget constraint.
 
@@ -655,6 +667,19 @@ def rebalance_budget(
     Returns:
         Tuple of (rebalanced deck, stats dict).
     """
+    from sabermetrics.intelligence import experiment
+
+    if experiment.current().rebalance_policy == "off":
+        final_total = round(sum(float(a.card.get("price_usd", 0) or 0) for a in deck), 2)
+        return deck, {
+            "upgrades": 0,
+            "unbundles": 0,
+            "downgrades": 0,
+            "spent": 0.0,
+            "final_total": final_total,
+            "utilization": round(final_total / budget, 3) if budget else 0.0,
+        }
+
     protected = protected_names or set()
     min_gain = _SCORING.rebalance_min_gain
 

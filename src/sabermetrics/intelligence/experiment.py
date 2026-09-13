@@ -4,6 +4,9 @@ import math
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass
+from typing import Literal
+
+_POLICY = ("current", "off", "preserve")
 
 
 @dataclass(frozen=True)
@@ -14,6 +17,8 @@ class Experiment:
     budget_recall: int = 0
     draw_selection: bool = False
     preserve_functions: bool = True
+    swap_policy: Literal["current", "off", "preserve"] = "current"
+    rebalance_policy: Literal["current", "off", "preserve"] = "current"
 
     def __post_init__(self):
         if (
@@ -37,6 +42,9 @@ class Experiment:
             raise ValueError("Land weights outside experimental bounds")
         if type(self.budget_recall) is not int or not 0 <= self.budget_recall <= 24:
             raise ValueError("Recall bound must be an integer in 0..24")
+        for value in (self.swap_policy, self.rebalance_policy):
+            if type(value) is not str or value not in _POLICY:
+                raise ValueError("Policy must be current, off, or preserve")
 
     def to_dict(self):
         return asdict(self)

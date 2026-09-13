@@ -1,0 +1,101 @@
+{
+  "status": "prepared_not_executed_awaiting_source_freeze",
+  "cohort": "development exposed",
+  "initial_data": "../offline-grid/evaluation.db",
+  "initial_data_sha256": "3592bf8f2c5ef7a51b602b118e32b08d7da2375f29e6b620bba2a3d7462fee52",
+  "model_calls": "forbidden",
+  "cases": [
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3
+    }
+  ],
+  "matrix": [
+    {
+      "swap_policy": "current",
+      "rebalance_policy": "current"
+    },
+    {
+      "swap_policy": "current",
+      "rebalance_policy": "off"
+    },
+    {
+      "swap_policy": "current",
+      "rebalance_policy": "preserve"
+    },
+    {
+      "swap_policy": "off",
+      "rebalance_policy": "current"
+    },
+    {
+      "swap_policy": "off",
+      "rebalance_policy": "off"
+    },
+    {
+      "swap_policy": "off",
+      "rebalance_policy": "preserve"
+    },
+    {
+      "swap_policy": "preserve",
+      "rebalance_policy": "current"
+    },
+    {
+      "swap_policy": "preserve",
+      "rebalance_policy": "off"
+    },
+    {
+      "swap_policy": "preserve",
+      "rebalance_policy": "preserve"
+    }
+  ],
+  "initial_build_count": 18,
+  "finalist_controls": [
+    {
+      "case_id": "giada",
+      "name": "Giada, Font of Hope",
+      "budget": 150,
+      "power": 3
+    },
+    {
+      "case_id": "lathril",
+      "name": "Lathril, Blade of the Elves",
+      "budget": 100,
+      "power": 3
+    }
+  ],
+  "finalist_control_count": "Await finalist selection/cap from coordinator; no automatic execution",
+  "fixed_settings": "production policy, changing only two upstream stage policies",
+  "required_receipts": [
+    "source+scripts hash",
+    "initial data hash",
+    "full effective policy",
+    "immutable original greedy snapshot",
+    "post-strategy-variant snapshot",
+    "before/after each stage",
+    "accepted and rejected transaction proofs",
+    "persisted final cards/roles/prices",
+    "offline review degradation"
+  ],
+  "acceptance": [
+    "No unproved cut in preserve-mode accepted transactions",
+    "Valuable original greedy functions retained or explicit complete replacement proof",
+    "Bearer absent in known Krenko case unless admitted with a valid proof",
+    "Mystic Remora retained when present before optimizers or independently proved complete replacement",
+    "Global hard checks and persisted roles pass",
+    "Do not count preserving a bad initial greedy deck as improvement"
+  ],
+  "analysis": [
+    "Separate same-source policy differences from previous source revision changes",
+    "Compare cumulative original greedy to final and immediate transaction inputs",
+    "Report unsupported/unknown functions and noops explicitly",
+    "Rank strategic acceptance independently of numeric optimizer objective"
+  ]
+}

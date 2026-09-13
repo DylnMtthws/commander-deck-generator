@@ -6,6 +6,7 @@ import json
 import sqlite3
 import time
 import traceback
+from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 
@@ -53,6 +54,106 @@ def damage_role_failures(data):
         if complete_damage_role(wrapper["card"]) == "removal"
         and wrapper["slot_role"] != "removal"
     ]
+
+
+def _printed_list(card, key):
+    value = card.get(key)
+    if isinstance(value, str):
+        value = json.loads(value) if value else None
+    # Card.keywords defaults to []; synthesized basics may omit that field.
+    # Printed colors use None for unknown and must not receive this treatment.
+    if key == "keywords" and value is None:
+        return ()
+    return tuple(sorted(value)) if value is not None else None
+
+
+def _snapshot_multiset(cards):
+    """Ignore order/printing IDs, retaining functional data, price and actual role."""
+    from sabermetrics.intelligence.draw_selection import price
+    from sabermetrics.intelligence.function_guard import stable_id
+
+    return Counter(
+        (
+            stable_id(card),
+            price(card),
+            card.get("_slot_role"),
+            _printed_list(card, "colors"),
+            _printed_list(card, "keywords"),
+        )
+        for card in cards
+    )
+
+
+def audit_upstream(data, upstream, policy, budget, protected):
+    """Bind receipts to this request and independently audit saved stage boundaries."""
+    from sabermetrics.intelligence.function_guard import stable_id, validate_transition
+    from sabermetrics.intelligence.upstream_guard import audit_transactions
+
+    errors = []
+    result = {"errors": errors, "cumulative": None}
+    commander = data["deck"]["commander"]
+    try:
+        records = upstream.get("transactions", [])
+        snapshots = upstream.get("snapshots", {})
+        if upstream.get("policy") != policy:
+            errors.append("upstream_policy_mismatch")
+        required = ("greedy", "after_strategy_variant", "after_rebalance", "final")
+        for key in required:
+            if key not in snapshots:
+                errors.append("missing_snapshot:" + key)
+        if len(records) != 2:
+            errors.append("missing_optimizer_transactions")
+        for index, (stage, record) in enumerate(zip(("swap", "rebalance"), records)):
+            if record.get("stage") != stage:
+                errors.append(f"{index}:stage_mismatch")
+            mode = record.get("mode")
+            if mode != policy[stage + "_policy"]:
+                errors.append(f"{index}:mode_mismatch")
+            if record.get("status") not in {"accepted", "rejected", "error"}:
+                errors.append(f"{index}:invalid_transaction_status")
+            if record.get("budget") != budget:
+                errors.append(f"{index}:budget_mismatch")
+            recorded_commander = record.get("commander") or {}
+            if (
+                stable_id(recorded_commander) != stable_id(commander)
+                or _printed_list(recorded_commander, "colors")
+                != _printed_list(commander, "colors")
+                or _printed_list(recorded_commander, "keywords")
+                != _printed_list(commander, "keywords")
+            ):
+                errors.append(f"{index}:commander_mismatch")
+            if set(record.get("protected", [])) != set(protected):
+                errors.append(f"{index}:protected_mismatch")
+        result["transactions"] = audit_transactions(records)
+        errors.extend(result["transactions"]["errors"])
+        for position, key, error in (
+            (0, "after_strategy_variant", "first_transaction_input_mismatch"),
+            (-1, "after_rebalance", "last_transaction_output_mismatch"),
+        ):
+            boundary = "before" if position == 0 else "after"
+            if (
+                records
+                and key in snapshots
+                and _snapshot_multiset(records[position][boundary])
+                != _snapshot_multiset(snapshots[key])
+            ):
+                errors.append(error)
+        persisted = output_cards(data)
+        for card, wrapper in zip(persisted, data["deck"]["cards"], strict=True):
+            card["_slot_role"] = wrapper["slot_role"]
+        if "final" in snapshots and _snapshot_multiset(
+            snapshots["final"]
+        ) != _snapshot_multiset(persisted):
+            errors.append("final_snapshot_persistence_mismatch")
+        if "greedy" in snapshots:
+            result["cumulative"] = validate_transition(
+                snapshots["greedy"], persisted, commander, budget, protected
+            )
+        # An unproved cumulative transition is a strategic finding, not an
+        # automatic failure of a deliberately unguarded comparator policy.
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        errors.append("malformed_upstream_receipt:" + type(exc).__name__)
+    return result
 
 
 def main():
@@ -123,6 +224,7 @@ def main():
                 "offline": args.offline,
                 "policy": replace(base_policy, draw_selection=enabled).to_dict(),
             }
+            builder = None
             try:
                 builder = builder_class(args.database, progress_callback=progress)
                 with using(replace(base_policy, draw_selection=enabled)):
@@ -162,6 +264,15 @@ def main():
                 row["reported_guard"] = receipt.get("guard")
                 row["decisions"] = receipt.get("decisions", [])
                 row["validation_errors"] = []
+                upstream = builder._intelligence.get("upstream", {})
+                protected = set(builder._protected_names or ()) | set(
+                    getattr(builder, "_engine_protect_names", ()) or ()
+                )
+                row["upstream_audit"] = audit_upstream(
+                    data, upstream, row["policy"], case["budget"], protected
+                )
+                row["upstream_cumulative"] = row["upstream_audit"]["cumulative"]
+                row["validation_errors"].extend(row["upstream_audit"]["errors"])
                 row["damage_role_failures"] = damage_role_failures(data)
                 if row["damage_role_failures"]:
                     row["validation_errors"].append("complete_damage_role_mismatch")
@@ -230,6 +341,10 @@ def main():
                     error_type=type(exc).__name__,
                 )
                 (args.output / (key + "-error.txt")).write_text(traceback.format_exc())
+                if builder is not None:
+                    (args.output / (key + "-intelligence.json")).write_text(
+                        json.dumps(getattr(builder, "_intelligence", {}), indent=2)
+                    )
             rows.append(row)
             (args.output / "rows.json").write_text(json.dumps(rows, indent=2))
             print(json.dumps(row), flush=True)

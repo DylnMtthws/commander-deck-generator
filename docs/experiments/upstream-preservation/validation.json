@@ -1,0 +1,538 @@
+{
+  "pytest": {
+    "passed": 2006,
+    "skipped": 21,
+    "warnings": 54
+  },
+  "completed_builds": 22,
+  "preliminary_diagnostic_builds": 1,
+  "model_calls": 0,
+  "rows": [
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "current",
+        "rebalance_policy": "current"
+      },
+      "status": "completed",
+      "price": 50.97,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "current",
+        "rebalance_policy": "off"
+      },
+      "status": "completed",
+      "price": 51.0,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "current",
+        "rebalance_policy": "preserve"
+      },
+      "status": "completed",
+      "price": 51.0,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "off",
+        "rebalance_policy": "current"
+      },
+      "status": "completed",
+      "price": 50.98,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "off",
+        "rebalance_policy": "off"
+      },
+      "status": "completed",
+      "price": 50.25,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": [
+        {
+          "outgoing": "Shock",
+          "incoming": "Lightning Bolt"
+        }
+      ]
+    },
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "off",
+        "rebalance_policy": "preserve"
+      },
+      "status": "completed",
+      "price": 50.25,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": [
+        {
+          "outgoing": "Shock",
+          "incoming": "Lightning Bolt"
+        }
+      ]
+    },
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "preserve",
+        "rebalance_policy": "current"
+      },
+      "status": "completed",
+      "price": 50.98,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "preserve",
+        "rebalance_policy": "off"
+      },
+      "status": "completed",
+      "price": 50.25,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": [
+        {
+          "outgoing": "Shock",
+          "incoming": "Lightning Bolt"
+        }
+      ]
+    },
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "preserve",
+        "rebalance_policy": "preserve"
+      },
+      "status": "completed",
+      "price": 50.25,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": [
+        {
+          "outgoing": "Shock",
+          "incoming": "Lightning Bolt"
+        }
+      ]
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "current",
+        "rebalance_policy": "current"
+      },
+      "status": "completed",
+      "price": 199.15,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "current",
+        "rebalance_policy": "off"
+      },
+      "status": "completed",
+      "price": 199.15,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "current",
+        "rebalance_policy": "preserve"
+      },
+      "status": "completed",
+      "price": 199.15,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "off",
+        "rebalance_policy": "current"
+      },
+      "status": "completed",
+      "price": 199.66,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "off",
+        "rebalance_policy": "off"
+      },
+      "status": "completed",
+      "price": 199.66,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "off",
+        "rebalance_policy": "preserve"
+      },
+      "status": "completed",
+      "price": 199.66,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "preserve",
+        "rebalance_policy": "current"
+      },
+      "status": "completed",
+      "price": 199.66,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "preserve",
+        "rebalance_policy": "off"
+      },
+      "status": "completed",
+      "price": 199.66,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "preserve",
+        "rebalance_policy": "preserve"
+      },
+      "status": "completed",
+      "price": 199.66,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "giada",
+      "name": "Giada, Font of Hope",
+      "budget": 150,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "current",
+        "rebalance_policy": "current"
+      },
+      "status": "completed",
+      "price": 149.35,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "giada",
+      "name": "Giada, Font of Hope",
+      "budget": 150,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "preserve",
+        "rebalance_policy": "preserve"
+      },
+      "status": "completed",
+      "price": 148.78,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "lathril",
+      "name": "Lathril, Blade of the Elves",
+      "budget": 100,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "current",
+        "rebalance_policy": "current"
+      },
+      "status": "completed",
+      "price": 99.85,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": false,
+      "cumulative_proofs": []
+    },
+    {
+      "case_id": "lathril",
+      "name": "Lathril, Blade of the Elves",
+      "budget": 100,
+      "power": 3,
+      "policy": {
+        "evidence_weight": 0.45,
+        "land_evidence_weight": 0.0,
+        "land_risk_weight": 0.0,
+        "budget_recall": 0,
+        "draw_selection": true,
+        "preserve_functions": true,
+        "swap_policy": "preserve",
+        "rebalance_policy": "preserve"
+      },
+      "status": "completed",
+      "price": 97.4,
+      "hard_failures": 0,
+      "validation_errors": [],
+      "draw_package_status": "unresolved",
+      "cumulative_allowed": true,
+      "cumulative_proofs": []
+    }
+  ]
+}
