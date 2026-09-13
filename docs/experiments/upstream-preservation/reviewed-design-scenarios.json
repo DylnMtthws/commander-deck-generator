@@ -1,0 +1,1029 @@
+{
+  "meta": {
+    "spec": "transaction-spec.md",
+    "price_disclaimer": "ALL PRICES ARE SYNTHETIC. Values are invented for testing budget arithmetic and do not reflect any market.",
+    "oracle_sources": [
+      "public-fixtures.json",
+      "oracle_supplement (inline, below)"
+    ],
+    "schema": [
+      "id",
+      "before_named_cards",
+      "remove",
+      "add",
+      "synthetic_prices",
+      "commander_context",
+      "expected_accept",
+      "expected_reason"
+    ],
+    "context_conventions": {
+      "stub99": "FIXTURE ADAPTER ONLY: expand to explicit complete deck; never accept an asserted stub as production validation evidence.",
+      "neutral": "Synthetic test-context assumption; absence of detected commander restrictions is not proof of neutrality.",
+      "locked_cards": "User-named cards that may never appear in remove.",
+      "deck_version / proposal_base_version": "Commit must abort when these differ.",
+      "reserve_usd": "Synthetic starting budget reserve; must be >= 0."
+    },
+    "status": "Reviewed design cases; not executed tests. Expand stub99 into an actual complete valid deck before invoking production validator.",
+    "budget_requirement": "Reserve arithmetic is illustrative only; authoritative check revalues complete proposed deck with a consistent finite nonnegative price snapshot and validates total <= budget.",
+    "review_correction": "Original Fable supplementary Inspiration text was incorrect. Replaced positive family with verified Weave Fate. Added negative preserving Inspiration target-player function."
+  },
+  "oracle_supplement": [
+    {
+      "name": "Weave Fate",
+      "oracle_text": "Draw two cards.",
+      "mana_cost": "{3}{U}",
+      "cmc": 4.0,
+      "type_line": "Instant"
+    },
+    {
+      "name": "Quick Study",
+      "oracle_text": "Draw two cards.",
+      "mana_cost": "{2}{U}",
+      "cmc": 3.0,
+      "type_line": "Instant"
+    },
+    {
+      "name": "Counsel of the Soratami",
+      "oracle_text": "Draw two cards.",
+      "mana_cost": "{2}{U}",
+      "cmc": 3.0,
+      "type_line": "Sorcery"
+    },
+    {
+      "name": "Staggershock",
+      "oracle_text": "Staggershock deals 2 damage to any target.\nRebound (If you cast this spell from your hand, exile it as it resolves. At the beginning of your next upkeep, you may cast this card from exile without paying its mana cost.)",
+      "mana_cost": "{2}{R}",
+      "cmc": 3.0,
+      "type_line": "Instant"
+    },
+    {
+      "name": "Sol Ring",
+      "oracle_text": "{T}: Add {C}{C}.",
+      "mana_cost": "{1}",
+      "cmc": 1.0,
+      "type_line": "Artifact"
+    },
+    {
+      "name": "Arcane Signet",
+      "oracle_text": "{T}: Add one mana of any color in your commander's color identity.",
+      "mana_cost": "{2}",
+      "cmc": 2.0,
+      "type_line": "Artifact"
+    },
+    {
+      "name": "Inspiration",
+      "oracle_text": "Target player draws two cards.",
+      "mana_cost": "{3}{U}",
+      "cmc": 4.0,
+      "type_line": "Instant"
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "POS-01-simple-draw-lower-cost",
+      "before_named_cards": [
+        "Weave Fate",
+        "Shock",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Weave Fate"
+      ],
+      "add": [
+        "Quick Study"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Weave Fate": 0.1
+        },
+        "buy": {
+          "Quick Study": 0.15
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": true,
+      "expected_reason": "Pair proved improved: identical text 'Draw two cards', same type (Instant), same color identity, casting demand {3}{U} -> {2}{U} strictly lower, no fewer cards, no unknown functions, neutral commander context. Count 99, singleton, color, budget all pass."
+    },
+    {
+      "id": "POS-02-shock-to-bolt",
+      "before_named_cards": [
+        "Shock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock"
+      ],
+      "add": [
+        "Lightning Bolt"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Shock": 0.2
+        },
+        "buy": {
+          "Lightning Bolt": 2.0
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "damage_exact_restriction": false,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": true,
+      "expected_reason": "Pair proved improved: same cost {R}, same type Instant, same color, one_shot_damage_any_target 2 -> 3. Full Oracle text of both cards is covered by the model and no modeled damage-exact restriction exists."
+    },
+    {
+      "id": "POS-03-multi-two-proved-pairs",
+      "before_named_cards": [
+        "Shock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock",
+        "Weave Fate"
+      ],
+      "add": [
+        "Lightning Bolt",
+        "Quick Study"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Shock": 0.2,
+          "Weave Fate": 0.1
+        },
+        "buy": {
+          "Lightning Bolt": 2.0,
+          "Quick Study": 0.15
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "damage_exact_restriction": false,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": true,
+      "expected_reason": "Both pairs independently proved improved (see POS-01, POS-02). Zero regressing pairs. Count preserved at 99."
+    },
+    {
+      "id": "POS-04-cost-saving-funds-real-improvement",
+      "before_named_cards": [
+        "Shock",
+        "Divination",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Divination",
+        "Shock"
+      ],
+      "add": [
+        "Counsel of the Soratami",
+        "Lightning Bolt"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 0.5,
+        "sell": {
+          "Divination": 3.0,
+          "Shock": 0.2
+        },
+        "buy": {
+          "Counsel of the Soratami": 0.25,
+          "Lightning Bolt": 2.0
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "damage_exact_restriction": false,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": true,
+      "expected_reason": "Divination -> Counsel of the Soratami is nonregressing (identical text, cost, type, color). Its synthetic sale funds Shock -> Lightning Bolt, which is independently proved improved. Reserve 0.50 + 3.20 - 2.25 = 1.45 >= 0. At least one proved improvement, zero regressions."
+    },
+    {
+      "id": "NEG-01-bombardment-to-draw",
+      "before_named_cards": [
+        "Goblin Bombardment",
+        "Shock",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Goblin Bombardment"
+      ],
+      "add": [
+        "Divination"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Goblin Bombardment": 4.0
+        },
+        "buy": {
+          "Divination": 0.1
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Regressing pair: removed card provides repeatable_creature_sacrifice_outlet and repeatable_damage_any_target(1); added card provides neither. Ordinary draw spell cannot preserve a sacrifice outlet. Freed synthetic money is not a strategic gain."
+    },
+    {
+      "id": "NEG-02-bombardment-to-chirurgeon-unknown-body",
+      "before_named_cards": [
+        "Goblin Bombardment",
+        "Shock",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Goblin Bombardment"
+      ],
+      "add": [
+        "Goblin Chirurgeon"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Goblin Bombardment": 4.0
+        },
+        "buy": {
+          "Goblin Chirurgeon": 0.3
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Regressing pair: sacrifice outlet narrowed from any creature to Goblins only, repeatable_damage_any_target lost entirely, and the added card's creature body is an unmodeled function. Unknown functions cannot be claimed as preservation."
+    },
+    {
+      "id": "NEG-03-remora-to-one-shot-draw",
+      "before_named_cards": [
+        "Mystic Remora",
+        "Shock",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Mystic Remora"
+      ],
+      "add": [
+        "Divination"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Mystic Remora": 3.0
+        },
+        "buy": {
+          "Divination": 0.1
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Regressing pair: recurring_trigger(opponent casts noncreature spell), opponent_tax_or_draw(pay {4}) and the cumulative_upkeep condition are all lost. A cheap one-shot draw cannot claim preservation of a recurring engine. Type also changes Enchantment -> Sorcery."
+    },
+    {
+      "id": "NEG-04-rebound-condition-loss",
+      "before_named_cards": [
+        "Staggershock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Staggershock"
+      ],
+      "add": [
+        "Shock"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Staggershock": 0.15
+        },
+        "buy": {
+          "Shock": 0.2
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Regressing pair: rebound (a second cast) is a modeled function of the removed card and is absent on the added card. Lower cost does not compensate for a lost function."
+    },
+    {
+      "id": "NEG-05-unknown-replacement",
+      "before_named_cards": [
+        "Shock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock"
+      ],
+      "add": [
+        "Crimson Ember Strike"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Shock": 0.2
+        },
+        "buy": {
+          "Crimson Ember Strike": 1.0
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Fail closed: added name resolves to no card id or Oracle text in any source. No proof is possible for an unknown replacement."
+    },
+    {
+      "id": "NEG-06-missing-price",
+      "before_named_cards": [
+        "Shock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock"
+      ],
+      "add": [
+        "Lightning Bolt"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Shock": 0.2
+        },
+        "buy": {}
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "damage_exact_restriction": false,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Fail closed: buy price for Lightning Bolt is missing, so the budget check cannot complete. Functional proof would pass but hard checks must all complete before acceptance."
+    },
+    {
+      "id": "NEG-07-insufficient-synthetic-budget",
+      "before_named_cards": [
+        "Shock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock"
+      ],
+      "add": [
+        "Lightning Bolt"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 0.5,
+        "sell": {
+          "Shock": 0.2
+        },
+        "buy": {
+          "Lightning Bolt": 2.0
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "damage_exact_restriction": false,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Budget: 0.50 + 0.20 - 2.00 = -1.30 < 0. Functional proof passes but the after-state reserve would be negative."
+    },
+    {
+      "id": "NEG-08-negative-starting-reserve",
+      "before_named_cards": [
+        "Weave Fate",
+        "Shock",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Weave Fate"
+      ],
+      "add": [
+        "Quick Study"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": -1.0,
+        "sell": {
+          "Weave Fate": 0.1
+        },
+        "buy": {
+          "Quick Study": 0.15
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Malformed: negative budget reserve is never permitted, even though the pair itself is proved improved (POS-01)."
+    },
+    {
+      "id": "NEG-09-duplicate-swap-object",
+      "before_named_cards": [
+        "Shock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock",
+        "Shock"
+      ],
+      "add": [
+        "Lightning Bolt",
+        "Quick Study"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Shock": 0.2
+        },
+        "buy": {
+          "Lightning Bolt": 2.0,
+          "Quick Study": 0.15
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Malformed proposal: the same card appears twice in remove. Only one copy exists in a singleton deck, so the pairing cannot be recorded. Rejected before validation."
+    },
+    {
+      "id": "NEG-10-singleton-violation-after-state",
+      "before_named_cards": [
+        "Shock",
+        "Lightning Bolt",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock"
+      ],
+      "add": [
+        "Lightning Bolt"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Shock": 0.2
+        },
+        "buy": {
+          "Lightning Bolt": 2.0
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "damage_exact_restriction": false,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Singleton: Lightning Bolt is already in the retained deck, so the after-state would contain two copies."
+    },
+    {
+      "id": "NEG-11-stale-proposal-precommit-failure",
+      "before_named_cards": [
+        "Shock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock"
+      ],
+      "add": [
+        "Lightning Bolt"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Shock": 0.2
+        },
+        "buy": {
+          "Lightning Bolt": 2.0
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "damage_exact_restriction": false,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 3,
+        "proposal_base_version": 2
+      },
+      "expected_accept": false,
+      "expected_reason": "Pre-commit failure: proposal was built against deck version 2 but the current deck is version 3. Commit aborts; no partial write; the stale proposal must not overwrite the newer deck. Validation result alone is insufficient for acceptance."
+    },
+    {
+      "id": "NEG-12-one-good-one-bad-laundering",
+      "before_named_cards": [
+        "Shock",
+        "Goblin Bombardment",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock",
+        "Goblin Bombardment"
+      ],
+      "add": [
+        "Lightning Bolt",
+        "Divination"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 0.0,
+        "sell": {
+          "Shock": 0.2,
+          "Goblin Bombardment": 4.0
+        },
+        "buy": {
+          "Lightning Bolt": 2.0,
+          "Divination": 0.1
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "damage_exact_restriction": false,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Shock -> Lightning Bolt is proved improved, but Goblin Bombardment -> Divination is regressing (NEG-01). One good pair cannot launder one bad pair; the whole proposal rejects even though the budget works out."
+    },
+    {
+      "id": "NEG-13-aggregate-value-attribution",
+      "before_named_cards": [
+        "Concentrate",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Concentrate",
+        "Weave Fate"
+      ],
+      "add": [
+        "Divination",
+        "Quick Study"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Concentrate": 0.5,
+          "Weave Fate": 0.1
+        },
+        "buy": {
+          "Divination": 0.1,
+          "Quick Study": 0.15
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Weave Fate -> Quick Study is proved improved, but Concentrate -> Divination draws three -> two and is regressing. A claim that 'total cards drawn is roughly preserved' is aggregate value and may not be attributed to the individual pair."
+    },
+    {
+      "id": "NEG-14-strict-cost-saving-only",
+      "before_named_cards": [
+        "Divination",
+        "Shock",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Divination"
+      ],
+      "add": [
+        "Counsel of the Soratami"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 0.0,
+        "sell": {
+          "Divination": 3.0
+        },
+        "buy": {
+          "Counsel of the Soratami": 0.25
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Abstain: the only pair is nonregressing (identical text, cost, type) and there is no independently proved functional improvement. Freed synthetic money is not a strategic gain by itself."
+    },
+    {
+      "id": "NEG-15-locked-card-removal",
+      "before_named_cards": [
+        "Sol Ring",
+        "Shock",
+        "Weave Fate"
+      ],
+      "remove": [
+        "Sol Ring"
+      ],
+      "add": [
+        "Arcane Signet"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Sol Ring": 2.5
+        },
+        "buy": {
+          "Arcane Signet": 1.0
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Locked: Sol Ring is a user-locked card and may not be removed regardless of role or replacement quality. No functional comparison is performed."
+    },
+    {
+      "id": "NEG-16-color-identity-violation",
+      "before_named_cards": [
+        "Concentrate",
+        "Shock",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Concentrate"
+      ],
+      "add": [
+        "Harmonize"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Concentrate": 0.5
+        },
+        "buy": {
+          "Harmonize": 0.5
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Color identity: Harmonize ({2}{G}{G}) is outside the commander's U/R identity. Identical text and cost do not override a hard legality check."
+    },
+    {
+      "id": "NEG-17-count-not-preserved",
+      "before_named_cards": [
+        "Shock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock",
+        "Weave Fate"
+      ],
+      "add": [
+        "Lightning Bolt"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Shock": 0.2,
+          "Weave Fate": 0.1
+        },
+        "buy": {
+          "Lightning Bolt": 2.0
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "damage_exact_restriction": false,
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Malformed: remove has two entries and add has one, so Weave Fate is unpaired and the after-deck would have 98 cards. Rejected before validation."
+    },
+    {
+      "id": "NEG-18-missing-complete-context",
+      "before_named_cards": [
+        "Weave Fate",
+        "Shock"
+      ],
+      "remove": [
+        "Weave Fate"
+      ],
+      "add": [
+        "Quick Study"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Weave Fate": 0.1
+        },
+        "buy": {
+          "Quick Study": 0.15
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": true,
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Fail closed: before_named_cards has 2 entries, no stub99 declaration and no locked_cards list, so count, singleton, and locked-card checks cannot be completed. The pair itself matches POS-01 but incomplete context rejects."
+    },
+    {
+      "id": "NEG-19-commander-damage-exact-restriction",
+      "before_named_cards": [
+        "Shock",
+        "Weave Fate",
+        "Sol Ring"
+      ],
+      "remove": [
+        "Shock"
+      ],
+      "add": [
+        "Lightning Bolt"
+      ],
+      "synthetic_prices": {
+        "label": "SYNTHETIC",
+        "reserve_usd": 5.0,
+        "sell": {
+          "Shock": 0.2
+        },
+        "buy": {
+          "Lightning Bolt": 2.0
+        }
+      },
+      "commander_context": {
+        "color_identity": [
+          "U",
+          "R"
+        ],
+        "neutral": false,
+        "damage_exact_restriction": true,
+        "restriction_note": "Hypothetical modeled restriction: commander context depends on spells dealing exactly 2 damage.",
+        "stub99": true,
+        "locked_cards": [
+          "Sol Ring"
+        ],
+        "deck_version": 1,
+        "proposal_base_version": 1
+      },
+      "expected_accept": false,
+      "expected_reason": "Abstain: a modeled damage-exact restriction touches the changed function, so 2 -> 3 damage cannot be proved an improvement in this context. Contrast POS-02."
+    },
+    {
+      "id": "NEG-20-target-player-function-loss",
+      "before_named_cards": [
+        "Inspiration"
+      ],
+      "remove": [
+        "Inspiration"
+      ],
+      "add": [
+        "Quick Study"
+      ],
+      "synthetic_prices": {
+        "Inspiration": 1.0,
+        "Quick Study": 0.5
+      },
+      "commander_context": {
+        "stub99": true,
+        "neutral": true,
+        "reserve_usd": 5.0
+      },
+      "expected_accept": false,
+      "expected_reason": "Actual Inspiration targets a player; Quick Study cannot preserve that targeting capability. Cheaper casting and same controller draw quantity do not prove equivalence."
+    }
+  ]
+}

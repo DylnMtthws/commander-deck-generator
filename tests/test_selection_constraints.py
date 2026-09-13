@@ -278,6 +278,8 @@ def test_colored_sacrifice_cost_unsatisfied_when_every_color_is_known():
     )
     assert finding["severity"] == "warning"
     assert "still legal" in finding["message"]
+    assert "activation feasibility remains unproven" in finding["message"]
+    assert "unusable here" not in finding["message"]
 
 
 def test_mana_cost_proves_color_when_colors_field_is_absent():

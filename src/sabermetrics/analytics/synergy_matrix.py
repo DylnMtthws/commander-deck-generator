@@ -354,14 +354,25 @@ def _compute_embedding_matrix(candidates: list[dict]) -> tuple[np.ndarray, bool]
 def _get_primary_roles(candidates: list[dict]) -> list[str]:
     """Extract the primary role tag for each candidate card.
 
+    Complete creature-targetable damage reports ``removal`` before stale
+    ``role_tags`` or the default-utility fallback. Other cards keep existing
+    metadata semantics.
+
     Args:
         candidates: List of card dicts with 'role_tags' field.
 
     Returns:
         List of primary role strings (one per candidate).
     """
+    from sabermetrics.pipeline.slot_assigner import complete_damage_role
+
     roles: list[str] = []
     for card in candidates:
+        damage_role = complete_damage_role(card)
+        if damage_role is not None:
+            roles.append(damage_role)
+            continue
+
         rt_raw = card.get("role_tags", "[]")
         if isinstance(rt_raw, str):
             try:

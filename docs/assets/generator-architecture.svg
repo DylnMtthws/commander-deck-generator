@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1160" viewBox="0 0 1440 1160" role="img" aria-labelledby="title desc">
+<title id="title">Commander Deck Generator — end-to-end architecture</title>
+<desc id="desc">An authenticated request enters a durable SQLite job. A grounded model profile and prepared public corpus inform legal candidate scoring. Deterministic packages and guarded optimization assemble the deck. Model review and an optional bounded C++ resource probe precede final audits, persistence, and exports. Model inference and the simulator are separate dependencies; uncertainty remains visible. CI builds a verified image for an isolated owner-only service.</desc>
+<defs>
+ <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101d32"/><stop offset="1" stop-color="#08111f"/></linearGradient>
+ <linearGradient id="card" x2="0" y2="1"><stop stop-color="#192a41"/><stop offset="1" stop-color="#142237"/></linearGradient>
+ <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#70dbc8" stroke-width="1.4"/></marker>
+ <style>text{font-family:Arial,Helvetica,sans-serif} .body{fill:#c2cedd;font-size:19px}.small{fill:#9eafc4;font-size:16px}.heading{fill:#f0f6ff;font-size:25px;font-weight:700}.label{font-size:14px;letter-spacing:2px;font-weight:700;fill:#70dbc8}</style>
+</defs>
+<rect width="1440" height="1160" rx="24" fill="url(#bg)"/>
+<path d="M0 6H1440" stroke="#70dbc8" stroke-width="6"/>
+<circle cx="1320" cy="105" r="50" fill="none" stroke="#24374d" stroke-width="1"/>
+<circle cx="1320" cy="105" r="32" fill="none" stroke="#36516b" stroke-width="1"/>
+<path d="M1297 105h46M1320 82v46" stroke="#70dbc8" stroke-width="2"/>
+
+<text x="54" y="58" class="label" >SYSTEM DESIGN / COMMANDER DECK GENERATOR</text>
+<text x="54" y="112" class="heading" style="font-size:38px">Grounded reasoning. Constrained assembly.</text>
+<text x="54" y="149" class="body" >From a commander and a budget to a traceable 99-card list + commander.</text>
+<rect x="54" y="184" width="428" height="82" rx="14" fill="#0e1a2b" stroke="#2b4058"/>
+<text x="72" y="212" class="label" style="font-size:12px">PUBLIC DATA · PREPARED OFFLINE</text>
+<text x="72" y="243" class="body" style="font-size:17px">Oracle text • prices • decklists • rules</text>
+<rect x="500" y="184" width="428" height="82" rx="14" fill="#0e1a2b" stroke="#2b4058"/>
+<text x="518" y="212" class="label" style="font-size:12px">INFERENCE · EXTERNAL</text>
+<text x="518" y="243" class="body" style="font-size:17px">Hugging Face → DeepSeek Flash</text>
+<rect x="946" y="184" width="440" height="82" rx="14" fill="#0e1a2b" stroke="#2b4058"/>
+<text x="964" y="212" class="label" style="font-size:12px">REQUEST CONTRACT</text>
+<text x="964" y="243" class="body" style="font-size:17px">Commander • budget • power • intent</text>
+<rect x="54" y="315" width="420" height="224" rx="14" fill="url(#card)" stroke="#2b4058"/>
+<rect x="74" y="335" width="36" height="32" rx="8" fill="#183e46" stroke="#29635f"/>
+<text x="81" y="358" class="label" style="font-size:16px;letter-spacing:0">01</text>
+<text x="124" y="359" class="heading" >Accept &amp; queue</text>
+<text x="76" y="403" class="body" style="font-size:18px">Owner authentication</text>
+<text x="76" y="433" class="body" style="font-size:18px">Durable SQLite job + progress</text>
+<text x="76" y="463" class="body" style="font-size:18px">Single worker; visible recovery</text>
+<path d="M76 492h376" stroke="#2b4058"/>
+<text x="76" y="519" class="small" >Flask UI · generation_jobs.py</text>
+<rect x="510" y="315" width="420" height="224" rx="14" fill="url(#card)" stroke="#2b4058"/>
+<rect x="530" y="335" width="36" height="32" rx="8" fill="#183e46" stroke="#29635f"/>
+<text x="537" y="358" class="label" style="font-size:16px;letter-spacing:0">02</text>
+<text x="580" y="359" class="heading" >Ground the plan</text>
+<text x="532" y="403" class="body" style="font-size:18px">Cached commander profile</text>
+<text x="532" y="433" class="body" style="font-size:18px">Oracle + retrieved evidence</text>
+<text x="532" y="463" class="body" style="font-size:18px">Schema-checked model output</text>
+<path d="M532 492h376" stroke="#2b4058"/>
+<text x="532" y="519" class="small" >reasoning/ · reference_layer/</text>
+<rect x="966" y="315" width="420" height="224" rx="14" fill="url(#card)" stroke="#2b4058"/>
+<rect x="986" y="335" width="36" height="32" rx="8" fill="#183e46" stroke="#29635f"/>
+<text x="993" y="358" class="label" style="font-size:16px;letter-spacing:0">03</text>
+<text x="1036" y="359" class="heading" >Filter &amp; score</text>
+<text x="988" y="403" class="body" style="font-size:18px">Legality, colors, price constraints</text>
+<text x="988" y="433" class="body" style="font-size:18px">Roles + embeddings + synergy</text>
+<text x="988" y="463" class="body" style="font-size:18px">Evidence-aware candidate pruning</text>
+<path d="M988 492h376" stroke="#2b4058"/>
+<text x="988" y="519" class="small" >analytics/ · intelligence/</text>
+<rect x="54" y="600" width="420" height="224" rx="14" fill="url(#card)" stroke="#2b4058"/>
+<rect x="74" y="620" width="36" height="32" rx="8" fill="#183e46" stroke="#29635f"/>
+<text x="81" y="643" class="label" style="font-size:16px;letter-spacing:0">04</text>
+<text x="124" y="644" class="heading" >Assemble &amp; optimize</text>
+<text x="76" y="688" class="body" style="font-size:18px">Land, ramp, draw + engine packages</text>
+<text x="76" y="718" class="body" style="font-size:18px">Actual draw costs + prerequisites</text>
+<text x="76" y="748" class="body" style="font-size:18px">Greedy → guarded swaps → repair</text>
+<path d="M76 777h376" stroke="#2b4058"/>
+<text x="76" y="804" class="small" >pipeline/ · function guards</text>
+<rect x="510" y="600" width="420" height="224" rx="14" fill="url(#card)" stroke="#2b4058"/>
+<rect x="530" y="620" width="36" height="32" rx="8" fill="#183e46" stroke="#29635f"/>
+<text x="537" y="643" class="label" style="font-size:16px;letter-spacing:0">05</text>
+<text x="580" y="644" class="heading" >Review &amp; measure</text>
+<text x="532" y="688" class="body" style="font-size:18px">Batched model safety review</text>
+<text x="532" y="718" class="body" style="font-size:18px">Optional C++ resource comparison</text>
+<text x="532" y="748" class="body" style="font-size:18px">Bounded trials; explicit uncertainty</text>
+<path d="M532 777h376" stroke="#2b4058"/>
+<text x="532" y="804" class="small" >Model review · simulator adapter</text>
+<rect x="966" y="600" width="420" height="224" rx="14" fill="url(#card)" stroke="#2b4058"/>
+<rect x="986" y="620" width="36" height="32" rx="8" fill="#183e46" stroke="#29635f"/>
+<text x="993" y="643" class="label" style="font-size:16px;letter-spacing:0">06</text>
+<text x="1036" y="644" class="heading" >Validate &amp; deliver</text>
+<text x="988" y="688" class="body" style="font-size:18px">Legality + final deck support audit</text>
+<text x="988" y="718" class="body" style="font-size:18px">Persist list, warnings + evidence</text>
+<text x="988" y="748" class="body" style="font-size:18px">Web views · text / JSON / exports</text>
+<path d="M988 777h376" stroke="#2b4058"/>
+<text x="988" y="804" class="small" >SQLite · deterministic summaries</text>
+<path d="M474 427H502" fill="none" stroke="#70dbc8" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M930 427H958" fill="none" stroke="#70dbc8" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1386 468H1410V570H30V710H46" fill="none" stroke="#70dbc8" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M474 712H502" fill="none" stroke="#70dbc8" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M930 712H958" fill="none" stroke="#70dbc8" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="54" y="298" class="label" style="font-size:12px">GENERATION / SIX LOGICAL STAGES</text>
+<rect x="54" y="860" width="1332" height="83" rx="14" fill="#10282c" stroke="#2b5754"/>
+<text x="76" y="890" class="label" style="font-size:12px">TRUST BOUNDARY</text>
+<text x="76" y="918" class="body" style="font-size:19px;fill:#d2e9e4">Models interpret strategy; code owns constraints. Unknown mechanics remain unverified.</text>
+<text x="54" y="983" class="label" style="font-size:12px">DELIVERY &amp; OPERATIONS</text>
+<rect x="54" y="1001" width="420" height="98" rx="14" fill="#0e1a2b" stroke="#2b4058"/>
+<text x="72" y="1034" class="heading" style="font-size:20px">Passing CI → exact image</text>
+<text x="72" y="1064" class="small" >Tests • offline smoke • revision identity</text>
+<rect x="510" y="1001" width="420" height="98" rx="14" fill="#0e1a2b" stroke="#2b4058"/>
+<text x="528" y="1034" class="heading" style="font-size:20px">Isolated owner-only service</text>
+<text x="528" y="1064" class="small" >TLS • separate data, sessions and networks</text>
+<rect x="966" y="1001" width="420" height="98" rx="14" fill="#0e1a2b" stroke="#2b4058"/>
+<text x="984" y="1034" class="heading" style="font-size:20px">Observable + recoverable</text>
+<text x="984" y="1064" class="small" >Usage ledger • traces • backup • rollback</text>
+<text x="54" y="1135" class="small" style="font-size:15px">C++ probe: basic-land / commander resource scenarios only; not a multiplayer win-rate simulator.</text>
+</svg>

@@ -16,7 +16,7 @@ from copy import deepcopy
 
 from sabermetrics.intelligence.draw_selection import audit, identity, price
 
-VERSION = "function-preservation.v2"
+VERSION = "function-preservation.v3"
 _NUMBERS = {
     "a": 1,
     "one": 1,
@@ -282,6 +282,11 @@ def validate_transition(before, after, commander, budget, protected=()):
         reasons.append("unknown_removed_functionality")
     if not all_proved:
         reasons.append("missing_one_to_one_substitution_proof")
+    from sabermetrics.intelligence.deck_context import validate_deck_context
+
+    deck_context = validate_deck_context(before, after, commander)
+    if not deck_context["allowed"]:
+        reasons.append("deck_support_loss_or_unmodeled_dependency")
     allowed = not reasons
     changed = bool(removed or added)
     return {
@@ -293,6 +298,7 @@ def validate_transition(before, after, commander, budget, protected=()):
         "reasons": reasons,
         "functions": receipt,
         "proofs": proofs,
+        "deck_context": deck_context,
         "scope": "complete effect-family substitutions and detected commander contracts; baseline quality not certified",
     }
 
@@ -350,6 +356,12 @@ def guarded_repair(cards, candidates, commander, budget, power=3, protected=()):
                     continue
                 proof = substitution_proof(old, new, protected, commander, baseline)
                 if not proof["allowed"]:
+                    continue
+                from sabermetrics.intelligence.deck_context import validate_deck_context
+
+                trial = list(deck)
+                trial[i] = new
+                if not validate_deck_context(deck, trial, commander)["allowed"]:
                     continue
                 a, b = proof["before"], proof["after"]
                 options.append(

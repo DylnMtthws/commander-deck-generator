@@ -239,8 +239,8 @@ class ScryfallIngestion(SourceHealthMixin):
                     """INSERT OR REPLACE INTO cards
                     (id, oracle_id, name, mana_cost, cmc, type_line, oracle_text,
                      color_identity, keywords, is_legal_commander, is_legal_in_99,
-                     set_code, rarity, image_uri, last_updated)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+                     set_code, rarity, image_uri, power, toughness, colors, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
                     batch,
                 )
                 ingested += len(batch)
@@ -361,6 +361,9 @@ class ScryfallIngestion(SourceHealthMixin):
             set_code,
             rarity,
             image_uri,
+            raw.get("power"),
+            raw.get("toughness"),
+            json.dumps(raw["colors"]) if raw.get("colors") is not None else None,
         )
 
         # Prices

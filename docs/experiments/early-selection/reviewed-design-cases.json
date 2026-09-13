@@ -1,0 +1,456 @@
+{
+  "status": "Reviewed declarative cases; not executed",
+  "oracle_provenance": "Exact provided public-fixtures.json records; C6 symbolic metadata only",
+  "cases": [
+    {
+      "id": "C1",
+      "outgoing": [
+        "Weave Fate"
+      ],
+      "incoming": [
+        "Quick Study"
+      ],
+      "deck_context": "Drift of Phantasms in static list; no named lock; budget gate allows cost decrease",
+      "expected": "allow_preservation",
+      "reason": "Identical Oracle function and identical timing (both Instant); printed MV falls 4->3, which ADDS an MV-3 transmute target rather than removing one. Preservation proof only; not an optimality claim.",
+      "evidence": [
+        {
+          "card": "Drift of Phantasms",
+          "oracle_text": "Defender (This creature can't attack.)\nFlying\nTransmute {1}{U}{U} ({1}{U}{U}, Discard this card: Search your library for a card with the same mana value as this card, reveal it, put it into your hand, then shuffle. Transmute only as a sorcery.)",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Creature \u2014 Spirit"
+        },
+        {
+          "card": "Weave Fate",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{3}{U}",
+          "cmc": 4.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Quick Study",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Instant"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization",
+      "assumptions": "Synthetic fully specified local proof context; hard legality/budget/locks pass and no unexamined changed-support consumer may be ignored in integration."
+    },
+    {
+      "id": "C2",
+      "outgoing": [
+        "Quick Study"
+      ],
+      "incoming": [
+        "Weave Fate"
+      ],
+      "deck_context": "same as C1, reversed direction",
+      "expected": "reject",
+      "reason": "Fails the strict budget/cost hard check first: {2}{U} -> {3}{U}. Evaluation stops there; the incidental loss of a Drift MV-3 target is recorded but is not the stated rejection reason.",
+      "evidence": [
+        {
+          "card": "Weave Fate",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{3}{U}",
+          "cmc": 4.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Quick Study",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Instant"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    },
+    {
+      "id": "C3",
+      "outgoing": [
+        "Divination"
+      ],
+      "incoming": [
+        "Fabricate"
+      ],
+      "deck_context": "Dizzy Spell in static list; reviewer asserts the swap threatens Dizzy Spell's transmute targets",
+      "expected": "reject",
+      "reason": "MV3-to-MV3 preserves only that numeric membership; generic draw is not preserved by an artifact tutor. A passing isolated tutor-support check does not authorize the swap.",
+      "evidence": [
+        {
+          "card": "Dizzy Spell",
+          "oracle_text": "Target creature gets -3/-0 until end of turn.\nTransmute {1}{U}{U} ({1}{U}{U}, Discard this card: Search your library for a card with the same mana value as this card, reveal it, put it into your hand, then shuffle. Transmute only as a sorcery.)",
+          "mana_cost": "{U}",
+          "cmc": 1.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Divination",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Sorcery"
+        },
+        {
+          "card": "Fabricate",
+          "oracle_text": "Search your library for an artifact card, reveal it, put it into your hand, then shuffle.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Sorcery"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    },
+    {
+      "id": "C4",
+      "outgoing": [
+        "Inspiration"
+      ],
+      "incoming": [
+        "Quick Study"
+      ],
+      "deck_context": "deck context explicitly demands a card-targeting draw (ability to draw for a chosen player)",
+      "expected": "reject",
+      "reason": "Target-player draw capability is lost. Absence of an explicitly declared targeting demand is not proof the function is irrelevant.",
+      "evidence": [
+        {
+          "card": "Quick Study",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Inspiration",
+          "oracle_text": "Target player draws two cards.",
+          "mana_cost": "{3}{U}",
+          "cmc": 4.0,
+          "type_line": "Instant"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    },
+    {
+      "id": "C5",
+      "outgoing": [
+        "Divination"
+      ],
+      "incoming": [
+        "Quick Study"
+      ],
+      "deck_context": "Young Pyromancer and Vivi Ornitier in static list; no targeting demand",
+      "expected": "unknown",
+      "reason": "The supplied Vivi and Young Pyromancer cast-category checks pass, but Sorcery-to-Instant changes a printed type. Whole-swap preservation needs all relevant type/tutor/name consumers covered; no blanket widening-timing dominance is asserted.",
+      "evidence": [
+        {
+          "card": "Quick Study",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Divination",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Sorcery"
+        },
+        {
+          "card": "Vivi Ornitier",
+          "oracle_text": "{0}: Add X mana in any combination of {U} and/or {R}, where X is Vivi Ornitier's power. Activate only during your turn and only once each turn.\nWhenever you cast a noncreature spell, put a +1/+1 counter on Vivi Ornitier and it deals 1 damage to each opponent.",
+          "mana_cost": "{1}{U}{R}",
+          "cmc": 3.0,
+          "type_line": "Legendary Creature \u2014 Wizard"
+        },
+        {
+          "card": "Young Pyromancer",
+          "oracle_text": "Whenever you cast an instant or sorcery spell, create a 1/1 red Elemental creature token.",
+          "mana_cost": "{1}{R}",
+          "cmc": 2.0,
+          "type_line": "Creature \u2014 Human Shaman"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    },
+    {
+      "id": "C6",
+      "outgoing": [
+        "SYNTHETIC_DRAW2_MV3"
+      ],
+      "incoming": [
+        "SYNTHETIC_DRAW2_MV2"
+      ],
+      "deck_context": "SYNTHETIC STRUCTURAL FIXTURE \u2014 metadata only, not an actual card; two hypothetical identical static draw effects differing only in MV",
+      "expected": "unknown",
+      "reason": "Symbolic MV 3 -> MV 2 move used to exercise the tutor-support arithmetic. No Oracle assertion is made because public-fixtures.json contains no same-function MV-2 draw card (both Quick Study and Divination are MV 3). Verdict stays unknown pending a supplied card; the rule shape, not the swap, is what is under test.",
+      "evidence": [
+        {
+          "card": "Quick Study",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Divination",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Sorcery"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    },
+    {
+      "id": "C7",
+      "outgoing": [
+        "Divination"
+      ],
+      "incoming": [
+        "Goblin Chirurgeon"
+      ],
+      "deck_context": "Vivi Ornitier and Young Pyromancer in static list",
+      "expected": "reject",
+      "reason": "Noncreature sorcery -> creature. Both cast-trigger consumers lose a counted spell; neither trigger fires on a creature spell. Final counts drop for both consumers.",
+      "evidence": [
+        {
+          "card": "Divination",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Sorcery"
+        },
+        {
+          "card": "Vivi Ornitier",
+          "oracle_text": "{0}: Add X mana in any combination of {U} and/or {R}, where X is Vivi Ornitier's power. Activate only during your turn and only once each turn.\nWhenever you cast a noncreature spell, put a +1/+1 counter on Vivi Ornitier and it deals 1 damage to each opponent.",
+          "mana_cost": "{1}{U}{R}",
+          "cmc": 3.0,
+          "type_line": "Legendary Creature \u2014 Wizard"
+        },
+        {
+          "card": "Young Pyromancer",
+          "oracle_text": "Whenever you cast an instant or sorcery spell, create a 1/1 red Elemental creature token.",
+          "mana_cost": "{1}{R}",
+          "cmc": 2.0,
+          "type_line": "Creature \u2014 Human Shaman"
+        },
+        {
+          "card": "Goblin Chirurgeon",
+          "oracle_text": "Sacrifice a Goblin: Regenerate target creature.",
+          "mana_cost": "{R}",
+          "cmc": 1.0,
+          "type_line": "Creature \u2014 Goblin Shaman"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    },
+    {
+      "id": "C8",
+      "outgoing": [
+        "Thrill of Possibility"
+      ],
+      "incoming": [
+        "Demand Answers"
+      ],
+      "deck_context": "Young Pyromancer in static list; no named lock; commander cost/trigger interactions not represented in fixtures",
+      "expected": "allow_preservation",
+      "reason": "Same mana cost, same MV, same type, same draw. The mandatory discard remains a legal payment path, and an artifact-sacrifice option is added at no cost change. Preservation only \u2014 optimality is NOT claimed, since unknown commander and cost-modification interactions are outside the fixture.",
+      "evidence": [
+        {
+          "card": "Demand Answers",
+          "oracle_text": "As an additional cost to cast this spell, sacrifice an artifact or discard a card.\nDraw two cards.",
+          "mana_cost": "{1}{R}",
+          "cmc": 2.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Thrill of Possibility",
+          "oracle_text": "As an additional cost to cast this spell, discard a card.\nDraw two cards.",
+          "mana_cost": "{1}{R}",
+          "cmc": 2.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Young Pyromancer",
+          "oracle_text": "Whenever you cast an instant or sorcery spell, create a 1/1 red Elemental creature token.",
+          "mana_cost": "{1}{R}",
+          "cmc": 2.0,
+          "type_line": "Creature \u2014 Human Shaman"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization",
+      "assumptions": "Synthetic fully specified local proof context; hard legality/budget/locks pass and no unexamined changed-support consumer may be ignored in integration."
+    },
+    {
+      "id": "C9",
+      "outgoing": [
+        "Village Rites"
+      ],
+      "incoming": [
+        "Deadly Dispute"
+      ],
+      "deck_context": "strict budget gate active; creature fodder present",
+      "expected": "reject",
+      "reason": "Under the proposed no-increase casting-resource proof family, upfront mana rises from B to1B. The later Treasure cannot pay this spell's initial cost. This rejects the narrow proof, not the card's strategic usefulness.",
+      "evidence": [
+        {
+          "card": "Village Rites",
+          "oracle_text": "As an additional cost to cast this spell, sacrifice a creature.\nDraw two cards.",
+          "mana_cost": "{B}",
+          "cmc": 1.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Deadly Dispute",
+          "oracle_text": "As an additional cost to cast this spell, sacrifice an artifact or creature.\nDraw two cards and create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")",
+          "mana_cost": "{1}{B}",
+          "cmc": 2.0,
+          "type_line": "Instant"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    },
+    {
+      "id": "C10",
+      "outgoing": [
+        "Mystic Remora"
+      ],
+      "incoming": [
+        "Divination"
+      ],
+      "deck_context": "any",
+      "expected": "reject",
+      "reason": "Conditional, opponent-triggered, repeatable draw is never equated with a one-shot controller draw. The outgoing effect is also opponent-payable and self-sacrificing via cumulative upkeep; no quantity of one-shot draw reconciles the function.",
+      "evidence": [
+        {
+          "card": "Divination",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Sorcery"
+        },
+        {
+          "card": "Mystic Remora",
+          "oracle_text": "Cumulative upkeep {1} (At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it unless you pay its upkeep cost for each age counter on it.)\nWhenever an opponent casts a noncreature spell, you may draw a card unless that player pays {4}.",
+          "mana_cost": "{U}",
+          "cmc": 1.0,
+          "type_line": "Enchantment"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    },
+    {
+      "id": "C11",
+      "outgoing": [
+        "Goblin Chirurgeon"
+      ],
+      "incoming": [
+        "Divination"
+      ],
+      "deck_context": "Goblin Bombardment in static list; Young Pyromancer in static list; reviewer asserts removing this creature makes the sacrifice outlet uncastable/dead",
+      "expected": "reject",
+      "reason": "The outgoing regeneration outlet/body are not preserved by Divination. Separately, absence of static creatures cannot prove Bombardment's activation impossible, and activation support is not a casting prerequisite. Report that dependency question as unknown, not as the whole-swap verdict.",
+      "evidence": [
+        {
+          "card": "Divination",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Sorcery"
+        },
+        {
+          "card": "Young Pyromancer",
+          "oracle_text": "Whenever you cast an instant or sorcery spell, create a 1/1 red Elemental creature token.",
+          "mana_cost": "{1}{R}",
+          "cmc": 2.0,
+          "type_line": "Creature \u2014 Human Shaman"
+        },
+        {
+          "card": "Goblin Bombardment",
+          "oracle_text": "Sacrifice a creature: This enchantment deals 1 damage to any target.",
+          "mana_cost": "{1}{R}",
+          "cmc": 2.0,
+          "type_line": "Enchantment"
+        },
+        {
+          "card": "Goblin Chirurgeon",
+          "oracle_text": "Sacrifice a Goblin: Regenerate target creature.",
+          "mana_cost": "{R}",
+          "cmc": 1.0,
+          "type_line": "Creature \u2014 Goblin Shaman"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    },
+    {
+      "id": "C12",
+      "outgoing": [
+        "Weave Fate",
+        "Inspiration"
+      ],
+      "incoming": [
+        "Quick Study",
+        "Divination"
+      ],
+      "deck_context": "ONE-TO-MANY. Static list also contains Drift of Phantasms, Vivi Ornitier, Young Pyromancer. No targeting demand declared; no named lock; budget gate passes (both costs fall).",
+      "expected": "reject",
+      "reason": "Inspiration targeting is lost; pairing it with Divination also changes Instant timing to Sorcery. Increased MV3 tutor count and unchanged aggregate cast counts cannot compensate for those individual function losses.",
+      "evidence": [
+        {
+          "card": "Drift of Phantasms",
+          "oracle_text": "Defender (This creature can't attack.)\nFlying\nTransmute {1}{U}{U} ({1}{U}{U}, Discard this card: Search your library for a card with the same mana value as this card, reveal it, put it into your hand, then shuffle. Transmute only as a sorcery.)",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Creature \u2014 Spirit"
+        },
+        {
+          "card": "Weave Fate",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{3}{U}",
+          "cmc": 4.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Quick Study",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Divination",
+          "oracle_text": "Draw two cards.",
+          "mana_cost": "{2}{U}",
+          "cmc": 3.0,
+          "type_line": "Sorcery"
+        },
+        {
+          "card": "Inspiration",
+          "oracle_text": "Target player draws two cards.",
+          "mana_cost": "{3}{U}",
+          "cmc": 4.0,
+          "type_line": "Instant"
+        },
+        {
+          "card": "Vivi Ornitier",
+          "oracle_text": "{0}: Add X mana in any combination of {U} and/or {R}, where X is Vivi Ornitier's power. Activate only during your turn and only once each turn.\nWhenever you cast a noncreature spell, put a +1/+1 counter on Vivi Ornitier and it deals 1 damage to each opponent.",
+          "mana_cost": "{1}{U}{R}",
+          "cmc": 3.0,
+          "type_line": "Legendary Creature \u2014 Wizard"
+        },
+        {
+          "card": "Young Pyromancer",
+          "oracle_text": "Whenever you cast an instant or sorcery spell, create a 1/1 red Elemental creature token.",
+          "mana_cost": "{1}{R}",
+          "cmc": 2.0,
+          "type_line": "Creature \u2014 Human Shaman"
+        }
+      ],
+      "scope": "Bounded design fixture, not executed test or production authorization"
+    }
+  ]
+}

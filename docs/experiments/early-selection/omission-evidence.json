@@ -1,0 +1,45 @@
+{
+  "builds": 2,
+  "paid_calls": 0,
+  "model_cost": 0,
+  "both_instrumented_greedy_multisets_match_frozen_reference": true,
+  "card": "Mystic Remora",
+  "catalog_price": 10.22,
+  "structural_rank": 16,
+  "retained_rank": 16,
+  "draw_pool_size": 227,
+  "draw_adjusted_rank": 5,
+  "draw_adjusted_score": 0.9403844229707463,
+  "draw_budget": 20,
+  "draw_budget_already_spent_when_considered": 14.63,
+  "draw_rejection": "Candidate10.22 exceeds remaining5.37 after firstfour choices.",
+  "empirical_reserve": "No _empirical_inclusion/_empirical_reliable fields despite _selection_inclusion0.4304545; separate corpus channels.",
+  "greedy_score_iterations": 19,
+  "greedy_first_reserve_rejection_iteration": 19,
+  "greedy_spendable_at_first_skip": 9.1,
+  "greedy_role_multiplier_range": [
+    0.6,
+    0.85
+  ],
+  "affordable_package_example": {
+    "cards": [
+      "Curiosity",
+      "Mystic Remora",
+      "Tandem Lookout",
+      "Archmage Emeritus",
+      "Brainstorm",
+      "Ponder",
+      "Opt"
+    ],
+    "count": 7,
+    "price": 15.8,
+    "replaces": "Ophidian Eye",
+    "qualification": "Feasible package-design alternative only; sacrifices Flash and third conditional commander-engine copy. Not a proved function-preserving direct substitution or tested new deck."
+  },
+  "remaining_gaps": [
+    "Initial draw roles count cantrips, filtering and engines together.",
+    "New draw profile cannot parse Emeritus ability-word trigger or Tandem granted trigger.",
+    "Remora conditional/opponent-tax/upkeep mechanics not sufficiently parsed.",
+    "Role quotas penalize additional draw engines after cantrips/conditional draw fill generic target."
+  ]
+}

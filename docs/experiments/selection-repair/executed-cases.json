@@ -1,0 +1,436 @@
+[
+  {
+    "id": "krenko-grid-00",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": false,
+      "preserve_functions": true
+    },
+    "config_id": "df96e20484f991ad20a61b7f197a0567a799c5cafc1a9d8db1d5afb1e48258a9",
+    "arm": "baseline"
+  },
+  {
+    "id": "krenko-grid-01",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "config_id": "d5d71e014d8181348f14efe631c513ffef46af8a6e6217de22f5fc43567ee378",
+    "arm": "candidate"
+  },
+  {
+    "id": "krenko-grid-02",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 1.0,
+      "budget_recall": 0,
+      "draw_selection": false,
+      "preserve_functions": true
+    },
+    "config_id": "0f85a1e8f74fd47ac2bd30ff9e15c29c7527116775ff2496b336ffd9ead239b6",
+    "arm": "baseline"
+  },
+  {
+    "id": "krenko-grid-03",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 1.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "config_id": "61010a9edba486df5c26d723bd7821d7d4b979b6fcc8a2a213b340db4079c70a",
+    "arm": "candidate"
+  },
+  {
+    "id": "krenko-grid-04",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 10.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": false,
+      "preserve_functions": true
+    },
+    "config_id": "08dd49b5853863254a46d610ebe4daa42eaf14f79d6ffeb54bd87517bb44a6e5",
+    "arm": "baseline"
+  },
+  {
+    "id": "krenko-grid-05",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 10.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "config_id": "cdba3febde4169839a174c0b06ce25041c55d8b1b6edd07af8b9446525cabaac",
+    "arm": "candidate"
+  },
+  {
+    "id": "krenko-grid-06",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 10.0,
+      "land_risk_weight": 1.0,
+      "budget_recall": 0,
+      "draw_selection": false,
+      "preserve_functions": true
+    },
+    "config_id": "1d5c684000828d0fde6fd0613d41ed693674e331b6ff6b98794483d4e5682577",
+    "arm": "baseline"
+  },
+  {
+    "id": "krenko-grid-07",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 10.0,
+      "land_risk_weight": 1.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "config_id": "7c1f5dc7efcfe308b8624e16cc3b3532cd68ebf031e8f1025e4ddab95bbe994d",
+    "arm": "candidate"
+  },
+  {
+    "id": "krenko-grid-08",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 12,
+      "draw_selection": false,
+      "preserve_functions": true
+    },
+    "config_id": "93c4bba871fd656ff962f8ea4d3d0527332fa4d37e513302194a8d325a30faf7",
+    "arm": "baseline"
+  },
+  {
+    "id": "krenko-grid-09",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 12,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "config_id": "839a49099ccc38d8cca4885b9fa7f860ef30b1eb59ec13dbdfac81307490da8b",
+    "arm": "candidate"
+  },
+  {
+    "id": "krenko-grid-10",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 1.0,
+      "budget_recall": 12,
+      "draw_selection": false,
+      "preserve_functions": true
+    },
+    "config_id": "f88f2c6dde5420968cf4d92cb070ab8d62610052f28135c9d40fcdbedf1a7d34",
+    "arm": "baseline"
+  },
+  {
+    "id": "krenko-grid-11",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 1.0,
+      "budget_recall": 12,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "config_id": "107d3d88edb1a1c30e55c6f8b387ee3141773569d741a4c7a0f63b5c100c0525",
+    "arm": "candidate"
+  },
+  {
+    "id": "krenko-grid-12",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 10.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 12,
+      "draw_selection": false,
+      "preserve_functions": true
+    },
+    "config_id": "0f828aa182b3c80a3cf8ca2e91f5c0e8f8bb5d733e7351aac40e0b18e2cf8eb7",
+    "arm": "baseline"
+  },
+  {
+    "id": "krenko-grid-13",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 10.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 12,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "config_id": "9bdd157af9f417b78a467348997140075bdb7eb98fea50c6fda60272e3f8f941",
+    "arm": "candidate"
+  },
+  {
+    "id": "krenko-grid-14",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 10.0,
+      "land_risk_weight": 1.0,
+      "budget_recall": 12,
+      "draw_selection": false,
+      "preserve_functions": true
+    },
+    "config_id": "ebd8faeb2098608acdd17e7676fa11c278160e0addc886ccca2459e718267cfe",
+    "arm": "baseline"
+  },
+  {
+    "id": "krenko-grid-15",
+    "case": {
+      "case_id": "krenko-51-p3",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 10.0,
+      "land_risk_weight": 1.0,
+      "budget_recall": 12,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "config_id": "8eda073c8984555020b49ca65c151a1f36c95a6a18b04319e761192c686e535c",
+    "arm": "candidate"
+  },
+  {
+    "id": "giada-baseline",
+    "case": {
+      "case_id": "giada",
+      "name": "Giada, Font of Hope",
+      "budget": 150,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "arm": "baseline"
+  },
+  {
+    "id": "giada-candidate",
+    "case": {
+      "case_id": "giada",
+      "name": "Giada, Font of Hope",
+      "budget": 150,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "arm": "candidate"
+  },
+  {
+    "id": "vivi-baseline",
+    "case": {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "arm": "baseline"
+  },
+  {
+    "id": "vivi-candidate",
+    "case": {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "arm": "candidate"
+  },
+  {
+    "id": "lathril-baseline",
+    "case": {
+      "case_id": "lathril",
+      "name": "Lathril, Blade of the Elves",
+      "budget": 100,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "arm": "baseline"
+  },
+  {
+    "id": "lathril-candidate",
+    "case": {
+      "case_id": "lathril",
+      "name": "Lathril, Blade of the Elves",
+      "budget": 100,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    "policy": {
+      "evidence_weight": 0.45,
+      "land_evidence_weight": 0.0,
+      "land_risk_weight": 0.0,
+      "budget_recall": 0,
+      "draw_selection": true,
+      "preserve_functions": true
+    },
+    "arm": "candidate"
+  }
+]

@@ -1,0 +1,25 @@
+# Reviewed Vivi interaction risks
+
+This is a public hypothetical shell review, not an assessment of any generated deck or proof of any swap. Inputs: the 11 frozen-catalog Oracle records in `opus-public/public-fixtures.json`; no repository source, private deck, database or credentials supplied externally. The proposed tests below have not been implemented or run.
+
+## Findings and proposed guard cases
+
+1. **Protection can obstruct later setup.** With ordinary blue/red Vivi, Clout gives shroud. Casting Curiosity or Ophidian Eye targeting that already-shrouded Vivi is illegal; Flash does not bypass targeting. Attaching the draw Aura first and resolving Clout later is possible; shroud does not detach an already-attached Aura. Test both orders and target legality at resolution, not just cast. This is a sequencing warning, not a blanket declaration that the pair is bad. Rules 115.1b and 702.18 establish the relevant distinction. [Official comprehensive rules](https://media.wizards.com/2026/downloads/MagicCompRules%2020260819.txt)
+
+2. **Soulbond is a different setup contract.** Tandem can pair with shrouded Vivi because pairing does not target. It still needs an appropriate entry trigger, both creatures unpaired and under the same control; losing creature status, leaving or a control change ends the pairing. Test legal pairing through shroud and rejection of freely re-pairing already-paired creatures. Rules 702.95 and 115.1d support this. [Official comprehensive rules](https://media.wizards.com/2026/downloads/MagicCompRules%2020260819.txt)
+
+3. **Track the actual damage source and spell timing.** All three draw riders accept noncombat damage to an opponent. Curiosity/Eye attached to Vivi can therefore draw from Vivi damage, not from a separate Kessig Flamebreather's damage. Tandem's granted draw is mandatory; Curiosity/Eye are optional. Test separate sources, damage prevention, and missing attachment/pairing. Casting an Aura is itself a noncreature cast, but the newly cast Aura has not resolved when Vivi's cast trigger normally resolves: do not credit it retroactively. No supplied relationship automatically proves an infinite loop.
+
+4. **Power and mana are temporal resources.** Vivi permits one mana activation on its controller's turn. Clout and resolved cast triggers can increase power before that activation, but growth afterward cannot independently authorize another activation. Test power before/after the activation and deny a second activation or an opponent-turn activation in the ordinary unmodified state. Track colored mana available now: a prospective later burst cannot pay an earlier setup cost. Haste is not a prerequisite for Vivi's printed untapped mana ability.
+
+5. **Recurring draw, wheels and cantrips have distinct obligations.** Remora has increasing cumulative upkeep and opponent-payment branches. It can still be a strong recurring engine; dependency does not establish poor quality. Test zero draws when no qualifying opponent spells occur or all payments occur, plus upkeep ages 1/2/3 and deliberate nonpayment. Windfall requires all hands and resolution state; test an empty controller hand versus a stocked hand and preserve the cost of discarding protected resources. Neither card has a fixed guaranteed net-card yield.
+
+6. **Cheap interaction has narrower coverage.** Flusterstorm is one mana with a payment escape and instant/sorcery targets. Negate is two mana, with no printed payment escape and broader noncreature coverage. Test an opposing noncreature artifact/enchantment versus an instant, varying prior spell count and available payment mana. Storm copies do not themselves count as spells cast for Vivi. Do not infer a universally safe Negate-to-Flusterstorm upgrade from mana value.
+
+7. **Last Chance requires an explicit risk plan.** Its delayed loss is real; neither two-mana cost nor an extra turn proves a win. Test missing finish/prevention evidence as unresolved high risk, while permitting a separately validated finish or loss-prevention/end-turn mechanism to establish a route. Absence of lethal is not proof of uselessness or an automatic cut authorization.
+
+## Review corrections and receipt
+
+One actual Claude CLI session used `--model opus --effort medium`, with only Read/Glob/Grep/Edit/Write in an isolated public folder. Receipt `opus-public/agent-result.json`: session `8ef756db-f435-4b12-bb70-73803af887f4`, success, no permission denials, actual principal model `claude-opus-5` (auxiliary Haiku also recorded), duration 45,424 ms. Raw output retained in `opus-public/reviewed-interactions.md`.
+
+Independent review corrected its erroneous 10-record count (actual 11), its interpretation of the still-being-written output receipt as failed input, the categorical description of Remora as unstable, and the implication that only lethal can justify Last Chance. Current official rules resolved its explicit Aura/soulbond verification requests. The recommendations are bounded future guard cases, not simulated results or complete Magic intelligence.

@@ -1,0 +1,38 @@
+{
+  "scope": "Independent pair checks among original proposal additions/removals; not all catalog alternatives or subset search.",
+  "results": [
+    {
+      "case": "krenko-preserve-preserve",
+      "stage": "swap",
+      "removed": 10,
+      "added": 10,
+      "cross_pairs_checked": 100,
+      "proved_pairs": [],
+      "reason_counts": {
+        "Incomplete extended substitution coverage.": 100
+      }
+    },
+    {
+      "case": "krenko-preserve-preserve",
+      "stage": "rebalance",
+      "removed": 8,
+      "added": 8,
+      "cross_pairs_checked": 64,
+      "proved_pairs": [],
+      "reason_counts": {
+        "Incomplete extended substitution coverage.": 64
+      }
+    },
+    {
+      "case": "vivi-preserve-preserve",
+      "stage": "swap",
+      "removed": 16,
+      "added": 16,
+      "cross_pairs_checked": 256,
+      "proved_pairs": [],
+      "reason_counts": {
+        "Incomplete extended substitution coverage.": 256
+      }
+    }
+  ]
+}

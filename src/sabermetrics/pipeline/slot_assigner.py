@@ -96,14 +96,43 @@ class AssemblyResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+def complete_damage_role(card: dict) -> SlotRole | None:
+    """Return removal for a fully consumed creature-targetable damage spell.
+
+    Delegates to ``extended_profile`` rather than re-parsing Oracle damage text.
+    Incomplete, player-only, or extra-clause burn is not a role claim.
+
+    Args:
+        card: Card record with the Oracle fields the complete-profile parser reads.
+
+    Returns:
+        ``"removal"`` when the complete profile family is damage; otherwise ``None``.
+    """
+    from sabermetrics.intelligence.commander_substitutions import extended_profile
+
+    profile = extended_profile(card)
+    if profile and profile["family"] == "damage":
+        return "removal"
+    return None
+
+
 def _classify_card_role(card: dict, llm_role: str | None = None) -> SlotRole:
     """Determine a card's primary functional role.
 
     Uses LLM-assigned role if available, otherwise heuristic detection.
     """
+    # A current route-policy veto cannot be undone by generic draw heuristics.
+    draw_blocked = card.get("_draw_route_blocked") is True
+    if draw_blocked and llm_role == "draw":
+        llm_role = None
+
     # Trust LLM classification if provided
     if llm_role and llm_role in ("ramp", "draw", "removal", "wincon", "utility", "land", "other"):
         return llm_role
+
+    damage_role = complete_damage_role(card)
+    if damage_role is not None:
+        return damage_role
 
     type_line = (card.get("type_line") or "").lower()
     oracle_text = (card.get("oracle_text") or "").lower()
@@ -130,7 +159,7 @@ def _classify_card_role(card: dict, llm_role: str | None = None) -> SlotRole:
         "draw" in oracle_text and "card" in oracle_text,
         "look at the top" in oracle_text and "library" in oracle_text,
     ]
-    if any(draw_indicators):
+    if any(draw_indicators) and not draw_blocked:
         return "draw"
 
     # Removal detection

@@ -126,6 +126,9 @@ def row_to_card(row: sqlite3.Row | dict, *, price_usd: float | None = None) -> C
             d[field] = []
 
     price = price_usd if price_usd is not None else d.get("current_price_usd")
+    colors = d.get("colors")
+    if isinstance(colors, str):
+        colors = json.loads(colors) if colors else None
 
     return Card(
         id=d["id"],
@@ -133,9 +136,12 @@ def row_to_card(row: sqlite3.Row | dict, *, price_usd: float | None = None) -> C
         name=d["name"],
         mana_cost=d.get("mana_cost"),
         cmc=d["cmc"],
+        power=d.get("power"),
+        toughness=d.get("toughness"),
         type_line=d["type_line"],
         oracle_text=d.get("oracle_text"),
         color_identity=d["color_identity"],
+        colors=colors,
         keywords=d.get("keywords", []),
         is_legal_commander=bool(d.get("is_legal_commander", False)),
         is_legal_in_99=bool(d.get("is_legal_in_99", True)),

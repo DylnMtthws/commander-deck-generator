@@ -374,9 +374,10 @@ def _audit_sacrifice_prerequisite(card: dict, deck: list[dict]) -> list[dict]:
             CODE_SACRIFICE_COLOR_UNSATISFIED,
             SEVERITY_WARNING,
             _name(card),
-            f"{_name(card)} needs to sacrifice a {color_word} {noun} and no "
-            f"{noun} in this list has {color_word} among its printed colors. "
-            "The ability is unusable here; the card itself is still legal.",
+            f"{_name(card)} needs to sacrifice a {color_word} {noun}; "
+            "the static color scan found no matching entry. "
+            "Token production and color-changing effects are not modeled by this "
+            "check, so activation feasibility remains unproven. The card is still legal.",
         )
     ]
 

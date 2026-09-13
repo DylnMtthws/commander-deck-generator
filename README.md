@@ -3,85 +3,83 @@
 [![CI](https://github.com/DylnMtthws/commander-deck-generator/actions/workflows/ci.yml/badge.svg)](https://github.com/DylnMtthws/commander-deck-generator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Sabermetrics for Magic: constrained deck optimization with grounded AI reasoning.**
+**A constrained recommendation system for Magic: The Gathering, combining grounded AI reasoning with deterministic deck construction.**
 
-[Hosted application](https://generate.decklab.studio) · [Development](CONTRIBUTING.md) · [Deployment](docs/hosting.md) · [Deck Lab](https://github.com/DylnMtthws/deck-lab)
+[Hosted application](https://generate.decklab.studio) · [Architecture](#end-to-end-architecture) · [Validation](#evidence-and-current-release) · [Run locally](#run-locally) · [Contributing](CONTRIBUTING.md)
 
-Give the generator a Commander, a budget, and an optional strategy. It builds a
-99-card Commander deck plus its commander, combining deterministic filters and
-optimization with language-model analysis of the commander's plan. The original
-Sabermetrics web interface supports commander exploration, saved decks, and
-multiple deck views. Export formats include text, JSON, Moxfield, and Archidekt.
-The hosted instance is restricted to the owner's admin login.
+Choose a commander, budget, power target, and strategy. The generator assembles a
+99-card list plus its commander, tracks the build in the browser, and saves the
+result with explanations, warnings, and text, JSON, Moxfield, or Archidekt exports.
+The hosted instance permits only the owner's admin login; the application can
+also run locally.
 
-This repository preserves the original generator, extracted from commit
-`84b7d9807a846597f4020d1814c16a473584ec56`, immediately before the cEDH Deck Lab
-was introduced. Its original Git history is retained. The competitive research,
-editing, and simulation product now lives in the separate Deck Lab repository.
+The engineering problem is larger than asking a model for 100 names: recommendations
+must respect legality, color identity, prices, card interactions, conditional
+abilities, and incomplete evidence. This project makes those decisions inspectable
+through typed model responses, explicit constraints, candidate traces, and
+reproducible before/after evaluations.
 
-## Engineering highlights
+## End-to-end architecture
 
-- **Constraint-aware optimization.** Color identity, legality, singleton rules,
-  deck size, and card prices constrain a pipeline that uses role scoring,
-  Pareto filtering, greedy selection, swap refinement, and budget repair.
-- **Grounded model use.** Commander profiles combine card text with available
-  decklist and reference evidence. A batched safety review inspects risky picks;
-  deterministic code owns assembly and final legality checks. Profile identity,
-  set, timestamp, and evidence provenance come from trusted inputs. Final deck
-  summaries are rendered from selected card facts, without a prose-model call.
-- **Prepared, measurable scoring.** Rule matching evaluates each card/rule once
-  and combines masks with NumPy. Persistent embeddings require an explicit model
-  revision; public-card facts can be prepared separately from user data. A local
-  220-card benchmark reproduced the reference matrix with 99.0% less matching time.
-- **Executable strategy plans.** Supported landfall intent reserves functional
-  enablers and payoffs before pruning, then compares three constrained builds.
-  Facts distinguish land access from ramp and preserve unsupported prerequisites
-  as visible findings. These are conservative supported shapes, not a full rules engine.
-- **C++ experiment boundary.** An optional authenticated adapter compares basic-land
-  color substitutions with fixed seeds and fresh confirmation trials. It refuses
-  unsupported land mechanics and labels its narrow land/commander scenario; it
-  cannot estimate multiplayer win rates. See the [implementation and measured
-  limits](docs/specs/informed-generation/validation.md).
-- **Durable background work.** SQLite job records expose actual build stages,
-  survive browser reloads, and isolate status by owner. A process lock enforces
-  one worker; abandoned builds fail visibly after restart instead of silently
-  repeating paid requests.
-- **Explicit quality contracts.** Supported copy-creature intent becomes a
-  protected engine requirement. Final checks distinguish illegal lists from
-  unmet strategy, role, or bracket targets. Warnings remain attached to the deck.
-- **Cost observability.** A shared model client records token usage and estimated
-  cost, retries transient failures, supports prompt caching, and checks a
-  configured monthly spend ceiling before calls. Pricing constants and usage
-  determine estimates; this is not a guaranteed provider-side billing cap.
-- **Data engineering.** Source adapters normalize card/deck/reference material
-  into SQLite. Archetype clustering and per-variant inclusion rates let real
-  decklists inform candidate selection. Missing sources can reduce evidence.
-- **Testable boundaries.** Scoring, parsing, optimization, persistence, auth, and
-  model-facing behavior have automated tests. Provider responses are mocked for
-  ordinary unit tests; corpus-dependent checks skip when data is unavailable.
+[![Architecture: authenticated request and durable job, grounded profile, legal candidate scoring, guarded optimization, model review and optional C++ resource probe, then final validation and persistence.](docs/assets/generator-architecture.svg)](docs/assets/generator-architecture.svg)
 
-## How it works
+*Six logical stages, with public-data preparation, external inference, and release
+operations shown separately. [Open the scalable diagram](docs/assets/generator-architecture.svg).*
 
-```mermaid
-flowchart TD
-    Input[Commander + budget + intent] --> Profile[Grounded commander profile]
-    Corpus[(Cards, decklists, rules)] --> Profile
-    Corpus --> Filter[Legal pool + role scoring + Pareto filter]
-    Profile --> Filter
-    Filter --> Packages[Verified plan + protected infrastructure + empirical staples]
-    Packages --> Optimize[Bounded variants + swap refinement + budget repair]
-    Optimize --> Review[Batched model safety review]
-    Review --> Probe[Optional bounded C++ resource comparison]
-    Probe --> Validate[Final checks + evidence + persistence]
-    Validate --> Export[Web views and deck exports]
-```
+1. **Accept and queue.** Flask authenticates the owner and stores a durable SQLite
+   job. A single worker reports real pipeline progress; reloads preserve job
+   visibility and abandoned work fails explicitly after restart.
+2. **Ground the plan.** Hugging Face inference interprets commander strategy using
+   Oracle text and available reference evidence. Profiles are schema-validated,
+   cached, and tied to evidence provenance.
+3. **Filter and score.** Deterministic filters enforce candidate constraints.
+   Prepared role facts, embeddings, decklist inclusion, and synergy scores guide
+   pruning and recall.
+4. **Assemble and optimize.** Infrastructure packages reserve lands, ramp, draw,
+   and engine pieces. Greedy selection, swap refinement, and budget repair operate
+   with function-preservation checks. Draw routes distinguish printed mana value
+   from actual access costs and required support.
+5. **Review and measure.** A batched model review checks risky selections. An
+   optional C++ adapter compares supported basic-land resource scenarios with
+   fixed seeds and fresh confirmation trials. It is not a multiplayer simulator.
+6. **Validate and deliver.** Final checks reassess the actual deck, record unmet
+   requirements and uncertainty, and persist the result. Final summaries use
+   selected card facts without another prose-model call.
 
-The model is useful for strategic interpretation, but it is not trusted to
-produce a legal list unaided. Price is a constraint, not a proxy for card quality.
-See the [spec and operator setup](docs/specs/informed-generation/README.md),
-[`intelligence/`](src/sabermetrics/intelligence/), [`pipeline/`](src/sabermetrics/pipeline/),
-[`analytics/`](src/sabermetrics/analytics/), and
-[`reasoning/`](src/sabermetrics/reasoning/) for the implementation.
+## Engineering decisions worth exploring
+
+| Challenge | Implementation and tradeoff |
+| --- | --- |
+| Trusting model output | Models interpret strategy; deterministic assembly and legality checks own the list. Unknown mechanics remain unverified. [Reasoning](src/sabermetrics/reasoning/) |
+| Understanding conditional cards | Draw-route parsing separates casting, Channel, activation, setup, and prerequisites. Giada's mana is conditional; Vivi's variable output is not a fixed discount. [Route compiler](src/sabermetrics/intelligence/draw_routes.py) |
+| Avoiding destructive substitutions | Optimizer transactions preserve supported card functions and report rejected changes. Conservative unknowns can prevent useful swaps. [Function guard](src/sabermetrics/intelligence/function_guard.py) |
+| Explaining omissions | Candidate traces expose filtering, ranking, reservation, budget, and final membership. Paired runs hold data, profiles, and embeddings constant. [Evaluation evidence](docs/experiments/draw-routes/results.md) |
+| Keeping CPU work bounded | Prepared rule masks, NumPy scoring, and revision-pinned embedding caches avoid repeated matching. A bounded 220-card study matched the reference matrix with 99.0% less matching time; this is not an end-to-end latency claim. [Study](docs/specs/informed-generation/validation.md) |
+| Operating an AI application | Durable jobs, usage accounting, isolated owner access, exact CI image promotion, backups, and image rollback make failures observable and releases traceable. [Hosting](docs/hosting.md) |
+
+## Evidence and current release
+
+The release enables route-aware draw checks and function-preserving swap/budget
+policies in the web worker. Experimental defaults remain available for controlled
+comparisons. This improves cost and role reasoning; deck quality is still an open
+engineering problem.
+
+- **2,304 local tests passed**, with 21 data-dependent skips. GitHub CI separately
+  gates tests and an installed-container smoke; lint and type debt remain report-only.
+- **Eight primary paired builds** covered Vivi, Krenko, Giada, and Lathril across
+  $51–$200 budgets and power targets 2–3, using pinned local embeddings and exact
+  cached profiles. All passed mechanical validation without generation-model calls.
+- **A measured correction:** Lathril's two false draw assignments were removed.
+  Sanctuary Warden and Moldervine Reclamation remained in their respective decks.
+- **A measured limit:** final card membership did not change. The trace identified
+  an unscored cheapest-card fallback caused by a fixed per-slot budget reserve.
+  [The next-priority spec](docs/experiments/draw-routes/next-priority.md) defines the
+  follow-up and acceptance criteria. No win-rate or speed improvement is claimed.
+
+The [full results](docs/experiments/draw-routes/results.md) distinguish primary
+runs from degraded-feature controls and record hashes, unknown coverage, and
+limitations. The [replay runbook](docs/experiments/draw-routes/replay-runbook.md)
+documents the data, profile, and embedding prerequisites needed to repeat the comparison.
 
 ## Run locally
 
@@ -194,6 +192,15 @@ bounds operational complexity but does not provide high availability. The
 hosted entry point requires an explicit owner email and stable session key;
 invites and account-management writes are disabled in owner mode. Model and
 data credentials never belong in source control.
+
+## Project origin
+
+Originally named Sabermetrics, this generator was extracted from commit
+`84b7d9807a846597f4020d1814c16a473584ec56`, immediately before the cEDH Deck Lab
+was introduced. Original Git history is retained. The separate
+[Deck Lab repository](https://github.com/DylnMtthws/deck-lab) contains the competitive
+research, editing, and simulation product; the generator has its own deployment,
+data, and authentication boundary.
 
 Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Vulnerabilities:
 [SECURITY.md](SECURITY.md). Licensed under [MIT](LICENSE).

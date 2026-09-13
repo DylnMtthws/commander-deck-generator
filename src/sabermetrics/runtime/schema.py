@@ -10,10 +10,8 @@ import argparse
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = "1.1.0"
-SCHEMA_VERSION_DESCRIPTION = (
-    "Role tags, deck popularity_rank, detector reader columns"
-)
+SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION_DESCRIPTION = "Nullable printed card power, toughness and colors"
 INITIAL_SCHEMA_VERSION = "1.0"
 
 DDL_STATEMENTS = [
@@ -28,6 +26,9 @@ DDL_STATEMENTS = [
         type_line TEXT,
         oracle_text TEXT,
         color_identity TEXT,
+        power TEXT,
+        toughness TEXT,
+        colors TEXT,
         keywords TEXT,
         is_legal_commander BOOLEAN,
         is_legal_in_99 BOOLEAN,
@@ -483,6 +484,9 @@ def ensure_portal_schema(conn: sqlite3.Connection) -> None:
 
 
 CARD_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("power", "TEXT"),
+    ("toughness", "TEXT"),
+    ("colors", "TEXT"),
     ("role_tags", "TEXT"),
     ("functional_categories", "TEXT"),
     ("tags_extracted_at", "TIMESTAMP"),
@@ -518,7 +522,8 @@ def _add_columns(
 def ensure_runtime_schema(conn: sqlite3.Connection) -> None:
     """Idempotent additive migrations required by scoring and generators.
 
-    Adds ``cards.role_tags`` / ``functional_categories`` (and tagging metadata),
+    Adds nullable printed ``cards.power`` / ``toughness`` / ``colors``,
+    ``cards.role_tags`` / ``functional_categories`` (and tagging metadata),
     ``decks.popularity_rank`` / ``archetype_tags``, and ``ramp_candidates.produced_colors``.
     Recreates candidate views so ``SELECT *`` picks up new columns. Records
     :data:`SCHEMA_VERSION`. Does not seed user or corpus rows.

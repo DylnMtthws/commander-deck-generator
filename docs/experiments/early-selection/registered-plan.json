@@ -1,0 +1,46 @@
+{
+  "planned_builds": 12,
+  "models": "forbidden",
+  "status": "registered_pending_source_freeze",
+  "initial_database": "/Users/dylan/Projects/decklab-infra/.private/generator-selection-repair-study/offline-grid/evaluation.db",
+  "initial_sha256": "3592bf8f2c5ef7a51b602b118e32b08d7da2375f29e6b620bba2a3d7462fee52",
+  "arms": [
+    "current",
+    "budgeted",
+    "coverage"
+  ],
+  "commander_cases": [
+    {
+      "case_id": "vivi",
+      "name": "Vivi Ornitier",
+      "budget": 200,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    {
+      "case_id": "krenko",
+      "name": "Krenko, Mob Boss",
+      "budget": 51,
+      "power": 3,
+      "split": "development-exposed"
+    },
+    {
+      "case_id": "giada",
+      "name": "Giada, Font of Hope",
+      "budget": 150,
+      "power": 2,
+      "split": "development-exposed"
+    },
+    {
+      "case_id": "lathril",
+      "name": "Lathril, Blade of the Elves",
+      "budget": 100,
+      "power": 3,
+      "split": "development-exposed"
+    }
+  ],
+  "cached_profile": "Same existing commander-keyed profile reused without refresh across policies; Giada request power2 explicitly differs from earlier power3 studies",
+  "comparison": "Package changes are not direct function-preserving swaps; inspect greedy and final membership, draw receipts, mana burden, hard checks, role audits and cumulative guard proof independently",
+  "label": "Development exposed, no held-out claim",
+  "max_concurrent": 2
+}
