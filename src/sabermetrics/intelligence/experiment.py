@@ -1,0 +1,52 @@
+"""Explicit, scoped experimental factors. Defaults reproduce the prior candidate."""
+
+import math
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import asdict, dataclass
+
+
+@dataclass(frozen=True)
+class Experiment:
+    evidence_weight: float = 0.45
+    land_evidence_weight: float = 0.0
+    land_risk_weight: float = 0.0
+    budget_recall: int = 0
+
+    def __post_init__(self):
+        for value in (
+            self.evidence_weight,
+            self.land_evidence_weight,
+            self.land_risk_weight,
+        ):
+            if not math.isfinite(value):
+                raise ValueError("Nonfinite experiment weight")
+        if not 0 <= self.evidence_weight <= 0.9:
+            raise ValueError("Evidence weight must leave room for synergy")
+        if (
+            not 0 <= self.land_evidence_weight <= 50
+            or not 0 <= self.land_risk_weight <= 5
+        ):
+            raise ValueError("Land weights outside experimental bounds")
+        if type(self.budget_recall) is not int or not 0 <= self.budget_recall <= 24:
+            raise ValueError("Recall bound must be an integer in 0..24")
+
+    def to_dict(self):
+        return asdict(self)
+
+
+_BASELINE = Experiment()
+_current = ContextVar("selection_experiment", default=_BASELINE)
+
+
+def current() -> Experiment:
+    return _current.get()
+
+
+@contextmanager
+def using(experiment: Experiment):
+    token = _current.set(experiment)
+    try:
+        yield experiment
+    finally:
+        _current.reset(token)

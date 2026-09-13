@@ -1,0 +1,13 @@
+{
+  "source": "https://edhrec.com/commanders",
+  "ranking_observed": "2026-09-12 America/New_York",
+  "scope": "Selected examples from the displayed top 50, not all 50 commanders",
+  "cases": [
+    {"case_id":"krenko", "name":"Krenko, Mob Boss", "rank":5,"power":1,"budget":50,"split":"development"},
+    {"case_id":"azula", "name":"Fire Lord Azula", "rank":10,"power":5,"budget":2500,"split":"development"},
+    {"case_id":"giada", "name":"Giada, Font of Hope", "rank":14,"power":3,"budget":150,"split":"holdout"},
+    {"case_id":"lathril", "name":"Lathril, Blade of the Elves", "rank":13,"power":3,"budget":100,"split":"holdout"},
+    {"case_id":"yuriko", "name":"Yuriko, the Tiger's Shadow", "rank":19,"power":4,"budget":1000,"split":"holdout"},
+    {"case_id":"arcades", "name":"Arcades, the Strategist", "rank":41,"power":3,"budget":200,"split":"holdout"}
+  ]
+}

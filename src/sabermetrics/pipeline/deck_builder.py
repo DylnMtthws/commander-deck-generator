@@ -1116,6 +1116,7 @@ class DeckBuilder:
             card["_cvar_result"] = result.model_dump()
             from sabermetrics.intelligence.selection import evidence_score
 
+            card["_selection_base_score"] = result.composite_score
             card["_cvar_score"] = evidence_score(card, result.composite_score)
             # SME value-inversion rule: in an aura-engine deck, any 1-2
             # mana Aura is "one mana to stop an attacker" -- playable

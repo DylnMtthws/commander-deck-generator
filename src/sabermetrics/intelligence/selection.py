@@ -25,6 +25,9 @@ def retain_candidates(
     diverse roles/types/capabilities. Limits bound the quadratic optimizer without
     sacrificing an engine because an unrelated card has a cheaper printing.
     """
+    from sabermetrics.intelligence.experiment import current
+
+    experiment = current()
     selected: dict[str, dict] = {}
     reasons: dict[str, str] = {}
 
@@ -71,6 +74,20 @@ def retain_candidates(
     for group in sorted(groups):
         for c in groups[group][:24]:
             keep(c, "diverse " + group + " recall")
+    # Retain inexpensive functional alternatives before infrastructure spending.
+    # Bands prevent a high-price ranking from consuming all discovery slots.
+    if experiment.budget_recall:
+        for group in sorted(groups):
+            if not group.startswith(("role:", "cap:")):
+                continue
+            for ceiling in (0.25, 1.0, 3.0):
+                affordable = [
+                    c
+                    for c in groups[group]
+                    if 0 <= float(c.get("price_usd") or 0) <= ceiling
+                ]
+                for c in affordable[: experiment.budget_recall]:
+                    keep(c, f"affordable {group} recall <= ${ceiling}")
     for c in ordered[:350]:
         keep(c, "structural recall channel")
     # Do not truncate protected packages or previously retained channels to a
@@ -100,4 +117,7 @@ def evidence_score(card: dict, base: float) -> float:
     synergy = max(0.0, min(1.0, float(card.get("_selection_synergy", 0))))
     # A prior is not a win estimate. Unseen cards retain a structural contribution;
     # cohort-supported cards gain priority without rarity or price bonuses.
-    return float(min(1.0, 0.45 * base + 0.45 * rate**0.5 + 0.10 * synergy))
+    from sabermetrics.intelligence.experiment import current
+
+    weight = current().evidence_weight
+    return float(min(1.0, (0.9 - weight) * base + weight * rate**0.5 + 0.10 * synergy))
